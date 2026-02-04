@@ -160,6 +160,15 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUBECTL) delete -k manifests/kustomize/overlays/istio --ignore-not-found=$(ignore-not-found)
 
+.PHONY: deploy-gateway
+deploy-gateway: manifests kustomize ## Deploy controller with gateway overlay to the K8s cluster specified in ~/.kube/config.
+	cd manifests/kustomize/overlays/gateway && $(KUSTOMIZE) edit set image workspaces-controller=${IMG}
+	$(KUSTOMIZE) build manifests/kustomize/overlays/gateway | $(KUBECTL) apply -f -
+
+.PHONY: undeploy-gateway
+undeploy-gateway: kustomize ## Undeploy controller (gateway overlay) from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUSTOMIZE) build manifests/kustomize/overlays/gateway | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+
 ##@ Dependencies
 
 ## Location to install dependencies to

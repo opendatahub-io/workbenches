@@ -1,0 +1,185 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: redhat-ods-applications
+
+resources:
+- ../../base
+
+# - ../../components/certmanager
+components:
+- ../../components/gateway
+- ../../components/common
+#- ../../components/prometheus
+
+
+# [NO CERTMANAGER] Disable webhooks since we're not using cert-manager
+
+# [NO CERTMANAGER] Delete ValidatingWebhookConfiguration (not needed without cert-manager)
+
+# [NO CERTMANAGER] Delete webhook Service (not needed without cert-manager)
+# Fix ClusterRoleBinding to reference ServiceAccount in correct namespace
+# Fix leader election RoleBinding to reference ServiceAccount in correct namespace
+patches:
+- patch: |-
+    - op: replace
+      path: /subjects/0/namespace
+      value: redhat-ods-applications
+  target:
+    kind: ClusterRoleBinding
+    name: manager-rolebinding
+- patch: |-
+    - op: replace
+      path: /subjects/0/namespace
+      value: redhat-ods-applications
+  target:
+    kind: RoleBinding
+    name: leader-election-rolebinding
+- patch: |-
+    - op: remove
+      path: /metadata/labels/app.kubernetes.io~1component
+    - op: remove
+      path: /metadata/labels/app.kubernetes.io~1name
+  target:
+    kind: Namespace
+    name: kubeflow-workspaces
+- patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: ENABLE_WEBHOOKS
+        value: "false"
+  target:
+    kind: Deployment
+    name: workspaces-controller
+- patch: |-
+    $patch: delete
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingWebhookConfiguration
+    metadata:
+      name: validating-webhook-configuration
+  target:
+    kind: ValidatingWebhookConfiguration
+- patch: |-
+    $patch: delete
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: webhook-service
+  target:
+    kind: Service
+    name: webhook-service
+
+# [CERTMANAGER] Cert-manager replacements for CA injection annotations
+# These replacements need to be in the overlay because they reference resources
+# that have namespaces applied by the parent kustomization
+# replacements:
+# - source:
+#     fieldPath: .metadata.namespace
+#     group: cert-manager.io
+#     kind: Certificate
+#     name: serving-cert
+#     version: v1
+#   targets:
+#   - fieldPaths:
+#     - .metadata.annotations.[cert-manager.io/inject-ca-from]
+#     options:
+#       create: true
+#       delimiter: /
+#     select:
+#       kind: ValidatingWebhookConfiguration
+#   - fieldPaths:
+#     - .metadata.annotations.[cert-manager.io/inject-ca-from]
+#     options:
+#       create: true
+#       delimiter: /
+#     select:
+#       kind: CustomResourceDefinition
+# - source:
+#     fieldPath: .metadata.name
+#     group: cert-manager.io
+#     kind: Certificate
+#     name: serving-cert
+#     version: v1
+#   targets:
+#   - fieldPaths:
+#     - .metadata.annotations.[cert-manager.io/inject-ca-from]
+#     options:
+#       create: true
+#       delimiter: /
+#       index: 1
+#     select:
+#       kind: ValidatingWebhookConfiguration
+#   - fieldPaths:
+#     - .metadata.annotations.[cert-manager.io/inject-ca-from]
+#     options:
+#       create: true
+#       delimiter: /
+#       index: 1
+#     select:
+#       kind: CustomResourceDefinition
+# - source:
+#     fieldPath: .metadata.name
+#     kind: Service
+#     name: webhook-service
+#     version: v1
+#   targets:
+#   - fieldPaths:
+#     - .spec.dnsNames.0
+#     - .spec.dnsNames.1
+#     options:
+#       create: true
+#       delimiter: .
+#     select:
+#       group: cert-manager.io
+#       kind: Certificate
+#       version: v1
+# - source:
+#     fieldPath: .metadata.namespace
+#     kind: Service
+#     name: webhook-service
+#     version: v1
+#   targets:
+#   - fieldPaths:
+#     - .spec.dnsNames.0
+#     - .spec.dnsNames.1
+#     options:
+#       create: true
+#       delimiter: .
+#       index: 1
+#     select:
+#       group: cert-manager.io
+#       kind: Certificate
+#       version: v1
+# - source:
+#     fieldPath: .spec.secretName
+#     group: cert-manager.io
+#     kind: Certificate
+#     name: serving-cert
+#     version: v1
+#   targets:
+#   - fieldPaths:
+#     - .spec.template.spec.volumes.[name=cert].secret.secretName
+#     options: {}
+#     select:
+#       kind: Deployment
+#       name: workspaces-controller
+# - source:
+#     fieldPath: .spec.ports.[name=webhook].targetPort
+#     kind: Service
+#     name: webhook-service
+#     version: v1
+#   targets:
+#   - fieldPaths:
+#     - .spec.template.spec.containers.[name=manager].ports.[name=webhook-server].containerPort
+#     options: {}
+#     select:
+#       kind: Deployment
+#       name: workspaces-controller
+images:
+- name: ghcr.io/kubeflow/notebooks/workspaces-controller
+  newName: quay.io/harshad16/kubeflow-notebooks-v2
+  newTag: gateway
+- name: workspaces-controller
+  newName: quay.io/harshad16/kubeflow-notebooks-v2
+  newTag: gateway
