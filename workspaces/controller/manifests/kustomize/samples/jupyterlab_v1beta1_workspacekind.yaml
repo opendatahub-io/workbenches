@@ -206,8 +206,8 @@ spec:
     ##  - spec for PodSecurityContext:
     ##    https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#podsecuritycontext-v1-core
     ##
-    securityContext:
-      fsGroup: 100
+    # securityContext:
+    #   fsGroup: 100
 
     ## container SecurityContext for Workspace Pods (MUTABLE)
     ##  - spec for SecurityContext:
