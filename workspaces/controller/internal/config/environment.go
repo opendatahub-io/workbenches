@@ -25,4 +25,5 @@ type EnvConfig struct {
 	KubeGatewayName      string
 	KubeGatewayNamespace string
 	ControllerNamespace  string
+	KubeRbacProxyImage   string
 }

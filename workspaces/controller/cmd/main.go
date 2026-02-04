@@ -102,6 +102,8 @@ func main() {
 		"The name of the Kubernetes Gateway to use")
 	flag.StringVar(&cfg.KubeGatewayNamespace, "kube-gateway-namespace", getEnvAsStr("KUBE_GATEWAY_NAMESPACE", "kubeflow"),
 		"The namespace of the Kubernetes Gateway")
+	flag.StringVar(&cfg.KubeRbacProxyImage, "kube-rbac-proxy-image", getEnvAsStr("KUBE_RBAC_PROXY_IMAGE", ""),
+		"The image to use for the kube-rbac-proxy sidecar")
 
 	// Get controller namespace (from service account file or POD_NAMESPACE env var)
 	cfg.ControllerNamespace = getControllerNamespace("kubeflow-workspaces")
@@ -123,7 +125,8 @@ func main() {
 		"ControllerNamespace", cfg.ControllerNamespace,
 		"ClusterDomain", cfg.ClusterDomain,
 		"IstioGateway", cfg.IstioGateway,
-		"IstioHosts", cfg.IstioHosts)
+		"IstioHosts", cfg.IstioHosts,
+		"KubeRbacProxyImage", cfg.KubeRbacProxyImage)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
