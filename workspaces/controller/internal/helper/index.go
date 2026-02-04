@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	kubefloworgv1beta1 "github.com/kubeflow/notebooks/workspaces/controller/api/v1beta1"
 	"github.com/kubeflow/notebooks/workspaces/controller/internal/config"
@@ -88,6 +89,23 @@ func SetupManagerFieldIndexers(mgr ctrl.Manager, cfg *config.EnvConfig) error {
 		if err := mgr.GetFieldIndexer().IndexField(context.Background(), &istiov1.VirtualService{}, IndexWorkspaceOwnerField, func(rawObj client.Object) []string {
 			virtualService := rawObj.(*istiov1.VirtualService)
 			owner := metav1.GetControllerOf(virtualService)
+			if owner == nil {
+				return nil
+			}
+			if owner.APIVersion != kubefloworgv1beta1.GroupVersion.String() || owner.Kind != OwnerKindWorkspace {
+				return nil
+			}
+			return []string{owner.Name}
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Index HTTPRoute by its owner Workspace (only when KubeGateway is enabled)
+	if cfg.UseKubeGateway {
+		if err := mgr.GetFieldIndexer().IndexField(context.Background(), &gatewayv1.HTTPRoute{}, IndexWorkspaceOwnerField, func(rawObj client.Object) []string {
+			httpRoute := rawObj.(*gatewayv1.HTTPRoute)
+			owner := metav1.GetControllerOf(httpRoute)
 			if owner == nil {
 				return nil
 			}
