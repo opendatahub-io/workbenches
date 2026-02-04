@@ -1501,7 +1501,7 @@ func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubeflowor
 		case kubefloworgv1beta1.ImagePortProtocolHTTP:
 			sidecar = &corev1.Container{
 				Name:            workspaceKubeRbacProxyServicePortName,
-				Image:           "quay.io/opendatahub/odh-kube-auth-proxy@sha256:dcb09fbabd8811f0956ef612a0c9ddd5236804b9bd6548a0647d2b531c9d01b3",
+				Image:           r.Config.KubeRbacProxyImage,
 				ImagePullPolicy: corev1.PullAlways,
 				Args: []string{
 					"--secure-listen-address=0.0.0.0:" + strconv.Itoa(workspaceKubeRbacProxyPort),
