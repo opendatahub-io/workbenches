@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,8 +28,10 @@ import (
 	istiov1 "istio.io/client-go/pkg/apis/networking/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -45,6 +48,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	kubefloworgv1beta1 "github.com/kubeflow/notebooks/workspaces/controller/api/v1beta1"
 	"github.com/kubeflow/notebooks/workspaces/controller/internal/config"
@@ -52,6 +57,9 @@ import (
 )
 
 const (
+	// finalizer for cleaning up cluster-scoped resources (e.g., ClusterRoleBinding)
+	WorkspaceFinalizer = "notebooks.kubeflow.org/workspace-cleanup"
+
 	// label keys
 	workspaceNameLabel     = "notebooks.kubeflow.org/workspace-name"
 	workspaceSelectorLabel = "statefulset"
@@ -59,12 +67,25 @@ const (
 	// pod template constants
 	workspacePodTemplateContainerName = "main"
 
+	// kube-rbac-proxy constants
+	workspaceKubeRbacProxyServicePortName = "kube-rbac-proxy"
+	workspaceKubeRbacProxyPort            = 8443
+	workspaceKubeRbacProxyHealthPort      = 8444
+
+	workspaceKubeRbacProxyConfigVolumeName   = "kube-rbac-proxy-config"
+	workspaceKubeRbacProxyConfigMountPath    = "/etc/kube-rbac-proxy"
+	workspaceKubeRbacProxyConfigFilePath     = "/etc/kube-rbac-proxy/config-file.yaml"
+	workspaceKubeRbacProxyTLSCertsVolumeName = "kube-rbac-proxy-tls-certs"
+	workspaceKubeRbacProxyTLSCertsMountPath  = "/etc/tls/private"
+	workspaceKubeRbacProxyTLSCertFilePath    = "/etc/tls/private/tls.crt"
+	workspaceKubeRbacProxyTLSKeyFilePath     = "/etc/tls/private/tls.key"
+
 	// lengths for resource names
 	generateNameSuffixLength    = 6
 	maxServiceNameLength        = 63
 	maxVirtualServiceNameLength = 63
 	maxStatefulSetNameLength    = 52 // https://github.com/kubernetes/kubernetes/issues/64023
-
+	maxGatewayNameLength        = 63
 	// workspace connection path template
 	workspaceConnectPathTemplate = "/workspace/connect/%s/%s/%s/"
 
@@ -77,6 +98,7 @@ const (
 	stateMsgErrorMultipleStatefulSets      = "Workspace owns multiple StatefulSets: %s"
 	stateMsgErrorMultipleServices          = "Workspace owns multiple Services: %s"
 	stateMsgErrorMultipleVirtualServices   = "Workspace owns multiple VirtualServices: %s"
+	stateMsgErrorMultipleHTTPRoutes        = "Workspace owns multiple HTTPRoutes: %s"
 	stateMsgErrorStatefulSetWarningEvent   = "Workspace StatefulSet has warning event: %s"
 	stateMsgErrorPodUnschedulable          = "Workspace Pod is unschedulable: %s"
 	stateMsgErrorPodSchedulingGate         = "Workspace Pod is waiting for scheduling gate: %s"
@@ -129,6 +151,57 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	if !workspace.GetDeletionTimestamp().IsZero() {
 		log.V(2).Info("Workspace is being deleted")
+
+		// Handle cleanup of cross-namespace/cluster-scoped resources if finalizer is present
+		if controllerutil.ContainsFinalizer(workspace, WorkspaceFinalizer) {
+			// Clean up ClusterRoleBinding (cluster-scoped, can't use ownerReference)
+			clusterRoleBindingName := fmt.Sprintf("ws-%s-rbac-%s-auth-delegator", workspace.Name, workspace.Namespace)
+			clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+			err := r.Get(ctx, types.NamespacedName{Name: clusterRoleBindingName}, clusterRoleBinding)
+			if err == nil {
+				log.Info("Deleting ClusterRoleBinding during Workspace cleanup", "name", clusterRoleBindingName)
+				if err := r.Delete(ctx, clusterRoleBinding); err != nil && !apierrors.IsNotFound(err) {
+					log.Error(err, "unable to delete ClusterRoleBinding during cleanup")
+					return ctrl.Result{}, err
+				}
+			} else if !apierrors.IsNotFound(err) {
+				log.Error(err, "unable to fetch ClusterRoleBinding during cleanup")
+				return ctrl.Result{}, err
+			}
+
+			// Clean up HTTPRoute (cross-namespace, in controller namespace, can't use ownerReference)
+			if r.Config.UseKubeGateway {
+				httpRouteName := fmt.Sprintf("ws-%s-%s", workspace.Namespace, workspace.Name)
+				httpRoute := &gatewayv1.HTTPRoute{}
+				err := r.Get(ctx, types.NamespacedName{
+					Name:      httpRouteName,
+					Namespace: r.Config.ControllerNamespace,
+				}, httpRoute)
+				if err == nil {
+					log.Info("Deleting HTTPRoute during Workspace cleanup", "name", httpRouteName, "namespace", r.Config.ControllerNamespace)
+					if err := r.Delete(ctx, httpRoute); err != nil && !apierrors.IsNotFound(err) {
+						log.Error(err, "unable to delete HTTPRoute during cleanup")
+						return ctrl.Result{}, err
+					}
+				} else if !apierrors.IsNotFound(err) {
+					log.Error(err, "unable to fetch HTTPRoute during cleanup")
+					return ctrl.Result{}, err
+				}
+			}
+
+			// Remove the finalizer
+			controllerutil.RemoveFinalizer(workspace, WorkspaceFinalizer)
+			if err := r.Update(ctx, workspace); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(2).Info("update conflict while removing finalizer, will requeue")
+					return ctrl.Result{Requeue: true}, nil
+				}
+				log.Error(err, "unable to remove finalizer from Workspace")
+				return ctrl.Result{}, err
+			}
+			log.V(2).Info("Finalizer removed from Workspace")
+		}
+
 		return ctrl.Result{}, nil
 	}
 
@@ -229,56 +302,8 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// fetch StatefulSets
-	// NOTE: we filter by StatefulSets that are owned by the Workspace, not by name
-	//	     this allows us to generate a random name for the StatefulSet with `metadata.generateName`
-	var statefulSetName string
-	ownedStatefulSets := &appsv1.StatefulSetList{}
-	listOpts := &client.ListOptions{
-		FieldSelector: fields.OneTermEqualSelector(helper.IndexWorkspaceOwnerField, workspace.Name),
-		Namespace:     req.Namespace,
-	}
-	if err := r.List(ctx, ownedStatefulSets, listOpts); err != nil {
-		log.Error(err, "unable to list StatefulSets")
-		return ctrl.Result{}, err
-	}
-
-	// reconcile StatefulSet
-	switch numSts := len(ownedStatefulSets.Items); {
-	case numSts > 1:
-		statefulSetList := make([]string, len(ownedStatefulSets.Items))
-		for i, sts := range ownedStatefulSets.Items {
-			statefulSetList[i] = sts.Name
-		}
-		statefulSetListString := strings.Join(statefulSetList, ", ")
-		log.Error(nil, "Workspace owns multiple StatefulSets", "statefulSets", statefulSetListString)
-		return r.updateWorkspaceState(ctx, log, workspace,
-			kubefloworgv1beta1.WorkspaceStateError,
-			fmt.Sprintf(stateMsgErrorMultipleStatefulSets, statefulSetListString),
-		)
-	case numSts == 0:
-		if err := r.Create(ctx, statefulSet); err != nil {
-			log.Error(err, "unable to create StatefulSet")
-			return ctrl.Result{}, err
-		}
-		statefulSetName = statefulSet.ObjectMeta.Name
-		log.V(2).Info("StatefulSet created", "statefulSet", statefulSetName)
-	default:
-		foundStatefulSet := &ownedStatefulSets.Items[0]
-		statefulSetName = foundStatefulSet.ObjectMeta.Name
-		if helper.CopyStatefulSetFields(statefulSet, foundStatefulSet) {
-			if err := r.Update(ctx, foundStatefulSet); err != nil {
-				if apierrors.IsConflict(err) {
-					log.V(2).Info("update conflict while updating StatefulSet, will requeue")
-					return ctrl.Result{Requeue: true}, nil
-				}
-				log.Error(err, "unable to update StatefulSet")
-				return ctrl.Result{}, err
-			}
-			log.V(2).Info("StatefulSet updated", "statefulSet", statefulSetName)
-		}
-		statefulSet = foundStatefulSet
-	}
+	// NOTE: We defer the StatefulSet reconcile until after we potentially add the sidecar (for KubeGateway)
+	//       This is done below after the Service is created, as the sidecar generation needs the Service.
 
 	// generate Service
 	service, err := generateService(workspace, currentImageConfig.Spec)
@@ -297,9 +322,10 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// fetch Services
 	// NOTE: we filter by Services that are owned by the Workspace, not by name
 	//	     this allows us to generate a random name for the Service with `metadata.generateName`
+	// NOTE: we exclude kube-rbac-proxy services (used with KubeGateway) via label selector
 	var serviceName string
 	ownedServices := &corev1.ServiceList{}
-	listOpts = &client.ListOptions{
+	listOpts := &client.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector(helper.IndexWorkspaceOwnerField, workspace.Name),
 		Namespace:     req.Namespace,
 	}
@@ -308,11 +334,19 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// Filter out kube-rbac-proxy services from the count
+	var workspaceServices []corev1.Service
+	for _, svc := range ownedServices.Items {
+		if svc.Labels["app.kubernetes.io/component"] != "kube-rbac-proxy" {
+			workspaceServices = append(workspaceServices, svc)
+		}
+	}
+
 	// reconcile Service
-	switch numServices := len(ownedServices.Items); {
+	switch numServices := len(workspaceServices); {
 	case numServices > 1:
-		serviceList := make([]string, len(ownedServices.Items))
-		for i, svc := range ownedServices.Items {
+		serviceList := make([]string, len(workspaceServices))
+		for i, svc := range workspaceServices {
 			serviceList[i] = svc.Name
 		}
 		serviceListString := strings.Join(serviceList, ", ")
@@ -329,7 +363,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		serviceName = service.ObjectMeta.Name
 		log.V(2).Info("Service created", "service", serviceName)
 	default:
-		foundService := &ownedServices.Items[0]
+		foundService := &workspaceServices[0]
 		serviceName = foundService.ObjectMeta.Name
 		if helper.CopyServiceFields(service, foundService) {
 			if err := r.Update(ctx, foundService); err != nil {
@@ -346,6 +380,31 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		service = foundService
 	}
 
+	// If using KubeGateway, add sidecar to StatefulSet BEFORE reconciling
+	if r.Config.UseKubeGateway {
+		sidecar, sidecarVolumes := r.generateKubeRBACProxySidecar(workspace, workspaceKind, service, currentImageConfig.Spec)
+		if sidecar != nil {
+			log.V(1).Info("Adding kube-rbac-proxy sidecar to StatefulSet",
+				"sidecarName", sidecar.Name,
+				"totalContainersBefore", len(statefulSet.Spec.Template.Spec.Containers))
+			statefulSet.Spec.Template.Spec.Containers = append(statefulSet.Spec.Template.Spec.Containers, *sidecar)
+			statefulSet.Spec.Template.Spec.Volumes = append(statefulSet.Spec.Template.Spec.Volumes, sidecarVolumes...)
+			log.V(1).Info("Sidecar added to StatefulSet",
+				"totalContainersAfter", len(statefulSet.Spec.Template.Spec.Containers),
+				"totalVolumes", len(statefulSet.Spec.Template.Spec.Volumes))
+		}
+	}
+
+	// reconcile StatefulSet (now with sidecar if KubeGateway is enabled)
+	var statefulSetName string
+	statefulSet, statefulSetName, stsResult, err := r.reconcileOwnedStatefulSet(ctx, log, workspace, req.Namespace, statefulSet)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if stsResult != nil {
+		return *stsResult, nil
+	}
+
 	if r.Config.UseIstio {
 		// generate VirtualService
 		virtualsvc := r.generateVirtualService(workspace, workspaceKind, service, currentImageConfig.Spec)
@@ -359,11 +418,11 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		//	     this allows us to generate a random name for the virtualService with `metadata.generateName`
 		var virtualServiceName string
 		ownedVirtualServices := &istiov1.VirtualServiceList{}
-		listOpts = &client.ListOptions{
+		listOptsVS := &client.ListOptions{
 			FieldSelector: fields.OneTermEqualSelector(helper.IndexWorkspaceOwnerField, workspace.Name),
 			Namespace:     req.Namespace,
 		}
-		if err := r.List(ctx, ownedVirtualServices, listOpts); err != nil {
+		if err := r.List(ctx, ownedVirtualServices, listOptsVS); err != nil {
 			log.Error(err, "unable to list VirtualServices")
 			return ctrl.Result{}, err
 		}
@@ -400,6 +459,247 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 					return ctrl.Result{}, err
 				}
 				log.V(2).Info("VirtualService updated", "virtualService", virtualServiceName)
+			}
+		}
+	} else if r.Config.UseKubeGateway {
+		log.Info("Using KubeGateway for workspace access",
+			"workspace", workspace.Name,
+			"namespace", workspace.Namespace,
+			"workspaceKind", workspaceKind.Name)
+
+		// NOTE: Sidecar is already added to StatefulSet and reconciled above (before UseIstio/UseKubeGateway branches)
+
+		// generate KubeRBACProxyClusterRoleBinding
+		kubeRBACProxyClusterRoleBinding := r.generateKubeRBACProxyClusterRoleBinding(workspace, workspaceKind, service, currentImageConfig.Spec)
+
+		// Add finalizer to Workspace for ClusterRoleBinding cleanup (cluster-scoped resources can't use ownerReferences)
+		if !controllerutil.ContainsFinalizer(workspace, WorkspaceFinalizer) {
+			controllerutil.AddFinalizer(workspace, WorkspaceFinalizer)
+			if err := r.Update(ctx, workspace); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(2).Info("update conflict while adding finalizer to Workspace, will requeue")
+					return ctrl.Result{Requeue: true}, nil
+				}
+				log.Error(err, "unable to add finalizer to Workspace")
+				return ctrl.Result{}, err
+			}
+			log.V(2).Info("Finalizer added to Workspace for cluster-scoped resource cleanup")
+		}
+
+		// Create the ClusterRoleBinding if it does not already exist
+		foundKubeRBACProxyClusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+		err = r.Get(ctx, types.NamespacedName{
+			Name: kubeRBACProxyClusterRoleBinding.GetName(),
+		}, foundKubeRBACProxyClusterRoleBinding)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Creating kube-rbac-proxy ClusterRoleBinding",
+					"name", kubeRBACProxyClusterRoleBinding.GetName())
+				// Note: ClusterRoleBindings cannot have ownerReferences to namespaced resources
+				// Cleanup is handled via finalizer on the Workspace
+				err = r.Create(ctx, kubeRBACProxyClusterRoleBinding)
+				if err != nil && !apierrors.IsAlreadyExists(err) {
+					log.Error(err, "Unable to create the kube-rbac-proxy ClusterRoleBinding")
+					return ctrl.Result{}, err
+				}
+			} else {
+				log.Error(err, "Unable to fetch the kube-rbac-proxy ClusterRoleBinding")
+				return ctrl.Result{}, err
+			}
+		}
+
+		// generate KubeRBACProxyConfigMap
+		kubeRBACProxyConfigMap := r.generateKubeRBACProxyConfigMap(workspace, workspaceKind, service, currentImageConfig.Spec)
+		if err := ctrl.SetControllerReference(workspace, kubeRBACProxyConfigMap, r.Scheme); err != nil {
+			log.Error(err, "unable to set controller reference on KubeRBACProxyConfigMap")
+			return ctrl.Result{}, err
+		}
+		// Create the kube-rbac-proxy ConfigMap if it does not already exist
+		foundKubeRBACProxyConfigMap := &corev1.ConfigMap{}
+		err = r.Get(ctx, types.NamespacedName{
+			Name:      kubeRBACProxyConfigMap.GetName(),
+			Namespace: workspace.GetNamespace(),
+		}, foundKubeRBACProxyConfigMap)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Creating kube-rbac-proxy ConfigMap",
+					"name", kubeRBACProxyConfigMap.GetName(),
+					"namespace", workspace.GetNamespace())
+				// Add .metatada.ownerReferences to the kube-rbac-proxy ConfigMap to be deleted by
+				// the Kubernetes garbage collector if the notebook is deleted
+				err = ctrl.SetControllerReference(workspace, kubeRBACProxyConfigMap, r.Scheme)
+				if err != nil && !apierrors.IsAlreadyExists(err) {
+					log.Error(err, "Unable to add OwnerReference to the kube-rbac-proxy ConfigMap")
+					return ctrl.Result{}, err
+				}
+				// Create the kube-rbac-proxy ConfigMap in the cluster
+				err = r.Create(ctx, kubeRBACProxyConfigMap)
+				if err != nil && !apierrors.IsAlreadyExists(err) {
+					log.Error(err, "Unable to create the kube-rbac-proxy ConfigMap")
+					return ctrl.Result{}, err
+				}
+			} else {
+				log.Error(err, "Unable to fetch the kube-rbac-proxy ConfigMap")
+				return ctrl.Result{}, err
+			}
+		} else {
+			// ConfigMap exists, check if it needs to be updated
+			needsUpdate := false
+
+			// Check if data differs
+			if len(foundKubeRBACProxyConfigMap.Data) != len(kubeRBACProxyConfigMap.Data) {
+				needsUpdate = true
+			} else {
+				for key, value := range kubeRBACProxyConfigMap.Data {
+					if foundKubeRBACProxyConfigMap.Data[key] != value {
+						needsUpdate = true
+						break
+					}
+				}
+			}
+
+			// Check if labels differ
+			if !needsUpdate {
+				if len(foundKubeRBACProxyConfigMap.Labels) != len(kubeRBACProxyConfigMap.Labels) {
+					needsUpdate = true
+				} else {
+					for key, value := range kubeRBACProxyConfigMap.Labels {
+						if foundKubeRBACProxyConfigMap.Labels[key] != value {
+							needsUpdate = true
+							break
+						}
+					}
+				}
+			}
+
+			if needsUpdate {
+				log.V(2).Info("Reconciling kube-rbac-proxy ConfigMap", "name", foundKubeRBACProxyConfigMap.GetName())
+				foundKubeRBACProxyConfigMap.Data = kubeRBACProxyConfigMap.Data
+				foundKubeRBACProxyConfigMap.Labels = kubeRBACProxyConfigMap.Labels
+				err = r.Update(ctx, foundKubeRBACProxyConfigMap)
+				if err != nil {
+					log.Error(err, "Unable to reconcile the kube-rbac-proxy ConfigMap")
+					return ctrl.Result{}, err
+				}
+			}
+		}
+
+		// generate KubeRBACProxyService
+		kubeRBACProxyService := r.generateKubeRBACProxyService(workspace, workspaceKind, service, currentImageConfig.Spec)
+		if err := ctrl.SetControllerReference(workspace, kubeRBACProxyService, r.Scheme); err != nil {
+			log.Error(err, "unable to set controller reference on KubeRBACProxyService")
+			return ctrl.Result{}, err
+		}
+		// Create the kube-rbac-proxy service if it does not already exist
+		foundKubeRBACProxyService := &corev1.Service{}
+		err = r.Get(ctx, types.NamespacedName{
+			Name:      kubeRBACProxyService.GetName(),
+			Namespace: workspace.GetNamespace(),
+		}, foundKubeRBACProxyService)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Creating kube-rbac-proxy Service",
+					"name", kubeRBACProxyService.GetName(),
+					"namespace", workspace.GetNamespace())
+				// Add .metatada.ownerReferences to the kube-rbac-proxy service to be deleted by
+				// the Kubernetes garbage collector if the notebook is deleted
+				err = ctrl.SetControllerReference(workspace, kubeRBACProxyService, r.Scheme)
+				if err != nil {
+					log.Error(err, "Unable to add OwnerReference to the kube-rbac-proxy Service")
+					return ctrl.Result{}, err
+				}
+				// Create the kube-rbac-proxy service in the Openshift cluster
+				err = r.Create(ctx, kubeRBACProxyService)
+				if err != nil && !apierrors.IsAlreadyExists(err) {
+					log.Error(err, "Unable to create the kube-rbac-proxy Service")
+					return ctrl.Result{}, err
+				}
+			} else {
+				log.Error(err, "Unable to fetch the kube-rbac-proxy Service")
+				return ctrl.Result{}, err
+			}
+		}
+
+		// generate ReferenceGrant
+		referenceGrant := r.generateKubeGatewayReferenceGrant(workspace, workspaceKind, kubeRBACProxyService, currentImageConfig.Spec)
+		if err := ctrl.SetControllerReference(workspace, referenceGrant, r.Scheme); err != nil {
+			log.Error(err, "unable to set controller reference on ReferenceGrant")
+			return ctrl.Result{}, err
+		}
+
+		// Check if ReferenceGrant already exists
+		foundRefGrant := &gatewayv1beta1.ReferenceGrant{}
+		err := r.Get(ctx, types.NamespacedName{
+			Name:      fmt.Sprintf("ws-%s-kube-gateway-reference-grant", workspace.Name),
+			Namespace: workspace.Namespace,
+		}, foundRefGrant)
+
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Creating ReferenceGrant to allow cross-namespace HTTPRoute backend references")
+				// Create the ReferenceGrant
+				// Note: We cannot use OwnerReference since ReferenceGrant is in user namespace
+				// and Notebook could be deleted. We'll use finalizers for cleanup.
+				err = r.Create(ctx, referenceGrant)
+				if err != nil && !apierrors.IsAlreadyExists(err) {
+					log.Error(err, "Unable to create ReferenceGrant")
+					return ctrl.Result{}, err
+				}
+				log.Info("Successfully created ReferenceGrant")
+			} else {
+				log.Error(err, "Unable to fetch ReferenceGrant")
+				return ctrl.Result{}, err
+			}
+		} else {
+			// ReferenceGrant exists - verify it matches the desired state
+			if helper.CopyReferenceGrantFields(referenceGrant, foundRefGrant) {
+				log.V(2).Info("updating ReferenceGrant to match desired spec and labels")
+				if err := r.Update(ctx, foundRefGrant); err != nil {
+					if apierrors.IsConflict(err) {
+						log.V(2).Info("update conflict while updating ReferenceGrant, will requeue")
+						return ctrl.Result{Requeue: true}, nil
+					}
+					log.Error(err, "unable to update ReferenceGrant")
+					return ctrl.Result{}, err
+				}
+			}
+			log.V(2).Info("ReferenceGrant updated", "referenceGrant", foundRefGrant.Name)
+		}
+
+		// generate HTTPRoute
+		// NOTE: HTTPRoute is created in the gateway namespace (cross-namespace from Workspace)
+		//       so we cannot use ownerReferences. Cleanup is handled via finalizer.
+		gatewayHTTPRoute := r.generateGatewayV1HTTPRoute(workspace, workspaceKind, kubeRBACProxyService, currentImageConfig.Spec)
+
+		// fetch or create HTTPRoute by name (deterministic name, not GenerateName)
+		foundHTTPRoute := &gatewayv1.HTTPRoute{}
+		err = r.Get(ctx, types.NamespacedName{
+			Name:      gatewayHTTPRoute.Name,
+			Namespace: gatewayHTTPRoute.Namespace,
+		}, foundHTTPRoute)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				if err := r.Create(ctx, gatewayHTTPRoute); err != nil {
+					log.Error(err, "unable to create HTTPRoute")
+					return ctrl.Result{}, err
+				}
+				log.V(2).Info("HTTPRoute created", "httpRoute", gatewayHTTPRoute.Name, "namespace", gatewayHTTPRoute.Namespace)
+			} else {
+				log.Error(err, "unable to fetch HTTPRoute")
+				return ctrl.Result{}, err
+			}
+		} else {
+			// HTTPRoute exists, check if update needed
+			if helper.CopyHTTPRouteFields(gatewayHTTPRoute, foundHTTPRoute) {
+				if err := r.Update(ctx, foundHTTPRoute); err != nil {
+					if apierrors.IsConflict(err) {
+						log.V(2).Info("update conflict while updating HTTPRoute, will requeue")
+						return ctrl.Result{Requeue: true}, nil
+					}
+					log.Error(err, "unable to update HTTPRoute")
+					return ctrl.Result{}, err
+				}
+				log.V(2).Info("HTTPRoute updated", "httpRoute", foundHTTPRoute.Name)
 			}
 		}
 	}
@@ -471,9 +771,11 @@ func (r *WorkspaceReconciler) SetupWithManager(mgr ctrl.Manager, opts *controlle
 		Owns(&corev1.Service{})
 
 	if r.Config.UseIstio {
-
 		controllerBuilder = controllerBuilder.Owns(&istiov1.VirtualService{})
 	}
+
+	// NOTE: HTTPRoute is NOT owned by Workspace (cross-namespace in gateway namespace)
+	// Cleanup is handled via finalizer, not ownerReference
 
 	return controllerBuilder.
 		Watches(
@@ -507,6 +809,74 @@ func (r *WorkspaceReconciler) updateWorkspaceState(ctx context.Context, log logr
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+// reconcileOwnedStatefulSet reconciles a StatefulSet owned by a Workspace.
+// It lists StatefulSets owned by the Workspace, then either creates, updates, or returns an error.
+// Returns:
+//   - foundStatefulSet: the actual StatefulSet (either created or found)
+//   - statefulSetName: the name of the StatefulSet
+//   - result: non-nil if the reconcile should return early (e.g., due to error state or requeue)
+//   - err: any error that occurred during reconciliation
+func (r *WorkspaceReconciler) reconcileOwnedStatefulSet(
+	ctx context.Context,
+	log logr.Logger,
+	workspace *kubefloworgv1beta1.Workspace,
+	namespace string,
+	desiredStatefulSet *appsv1.StatefulSet,
+) (foundStatefulSet *appsv1.StatefulSet, statefulSetName string, result *ctrl.Result, err error) {
+	// fetch StatefulSets
+	// NOTE: we filter by StatefulSets that are owned by the Workspace, not by name
+	//       this allows us to generate a random name for the StatefulSet with `metadata.generateName`
+	ownedStatefulSets := &appsv1.StatefulSetList{}
+	listOpts := &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector(helper.IndexWorkspaceOwnerField, workspace.Name),
+		Namespace:     namespace,
+	}
+	if err := r.List(ctx, ownedStatefulSets, listOpts); err != nil {
+		log.Error(err, "unable to list StatefulSets")
+		return nil, "", nil, err
+	}
+
+	// reconcile StatefulSet
+	switch numSts := len(ownedStatefulSets.Items); {
+	case numSts > 1:
+		statefulSetList := make([]string, len(ownedStatefulSets.Items))
+		for i, sts := range ownedStatefulSets.Items {
+			statefulSetList[i] = sts.Name
+		}
+		statefulSetListString := strings.Join(statefulSetList, ", ")
+		log.Error(nil, "Workspace owns multiple StatefulSets", "statefulSets", statefulSetListString)
+		res, err := r.updateWorkspaceState(ctx, log, workspace,
+			kubefloworgv1beta1.WorkspaceStateError,
+			fmt.Sprintf(stateMsgErrorMultipleStatefulSets, statefulSetListString),
+		)
+		return nil, "", &res, err
+	case numSts == 0:
+		if err := r.Create(ctx, desiredStatefulSet); err != nil {
+			log.Error(err, "unable to create StatefulSet")
+			return nil, "", nil, err
+		}
+		statefulSetName = desiredStatefulSet.ObjectMeta.Name
+		log.V(2).Info("StatefulSet created", "statefulSet", statefulSetName)
+		return desiredStatefulSet, statefulSetName, nil, nil
+	default:
+		foundStatefulSet = &ownedStatefulSets.Items[0]
+		statefulSetName = foundStatefulSet.ObjectMeta.Name
+		if helper.CopyStatefulSetFields(desiredStatefulSet, foundStatefulSet) {
+			if err := r.Update(ctx, foundStatefulSet); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(2).Info("update conflict while updating StatefulSet, will requeue")
+					res := ctrl.Result{Requeue: true}
+					return nil, "", &res, nil
+				}
+				log.Error(err, "unable to update StatefulSet")
+				return nil, "", nil, err
+			}
+			log.V(2).Info("StatefulSet updated", "statefulSet", statefulSetName)
+		}
+		return foundStatefulSet, statefulSetName, nil, nil
+	}
 }
 
 // mapWorkspaceKindToRequest converts WorkspaceKind events to reconcile requests for Workspaces
@@ -1072,6 +1442,323 @@ func (r *WorkspaceReconciler) generateVirtualService(workspace *kubefloworgv1bet
 	}
 
 	return virtualService
+}
+
+// generateKubeGatewayReferenceGrant generates a ReferenceGrant for a Workspace
+// The ReferenceGrant is created in the workspace namespace (where the Service is)
+// and grants access from HTTPRoutes in the controller namespace
+func (r *WorkspaceReconciler) generateKubeGatewayReferenceGrant(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *gatewayv1beta1.ReferenceGrant {
+	referenceGrant := &gatewayv1beta1.ReferenceGrant{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("ws-%s-kube-gateway-reference-grant", workspace.Name),
+			Namespace: workspace.Namespace, // ReferenceGrant lives in workspace namespace (where Service is)
+			Labels: map[string]string{
+				workspaceNameLabel: workspace.Name,
+			},
+		},
+		Spec: gatewayv1beta1.ReferenceGrantSpec{
+			From: []gatewayv1beta1.ReferenceGrantFrom{
+				{
+					Group:     gatewayv1.GroupName,
+					Kind:      "HTTPRoute",
+					Namespace: gatewayv1.Namespace(r.Config.ControllerNamespace), // HTTPRoute is in controller namespace
+				},
+			},
+			To: []gatewayv1beta1.ReferenceGrantTo{
+				{
+					Group: "",
+					Kind:  "Service",
+					Name:  ptr.To(gatewayv1.ObjectName(service.Name)),
+				},
+			},
+		},
+	}
+
+	return referenceGrant
+}
+
+// generateKubeRBACProxySidecar generates a KubeRBACProxySidecar container and its required volumes for a Workspace
+func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) (*corev1.Container, []corev1.Volume) {
+
+	currentPodTemplatePortsMap := make(map[kubefloworgv1beta1.PortId]kubefloworgv1beta1.WorkspaceKindPort)
+	for _, port := range workspaceKind.Spec.PodTemplate.Ports {
+		currentPodTemplatePortsMap[port.Id] = port
+	}
+
+	var sidecar *corev1.Container
+	var volumes []corev1.Volume
+	for _, imageConfigPort := range imageConfigSpec.Ports {
+		// silently ignore port ids not defined in the workspace kind
+		// NOTE: this should not be possible as the webhook blocks undefined ports
+		if _, exists := currentPodTemplatePortsMap[imageConfigPort.Id]; !exists {
+			continue
+		}
+
+		podTemplatePort := currentPodTemplatePortsMap[imageConfigPort.Id]
+
+		// Additional Cases would be added for SSH, etc.
+		switch podTemplatePort.Protocol { //nolint:gocritic
+		case kubefloworgv1beta1.ImagePortProtocolHTTP:
+			sidecar = &corev1.Container{
+				Name:            workspaceKubeRbacProxyServicePortName,
+				Image:           "quay.io/opendatahub/odh-kube-auth-proxy@sha256:dcb09fbabd8811f0956ef612a0c9ddd5236804b9bd6548a0647d2b531c9d01b3",
+				ImagePullPolicy: corev1.PullAlways,
+				Args: []string{
+					"--secure-listen-address=0.0.0.0:" + strconv.Itoa(workspaceKubeRbacProxyPort),
+					"--upstream=http://127.0.0.1:" + strconv.Itoa(int(imageConfigPort.Port)) + "/",
+					"--logtostderr=true",
+					"--v=10", // TODO - TBD, this is too verbose
+					"--proxy-endpoints-port=" + strconv.Itoa(int(workspaceKubeRbacProxyHealthPort)),
+					"--config-file=" + workspaceKubeRbacProxyConfigFilePath,
+					"--tls-cert-file=" + workspaceKubeRbacProxyTLSCertFilePath,
+					"--tls-private-key-file=" + workspaceKubeRbacProxyTLSKeyFilePath,
+					"--auth-header-fields-enabled=true",
+					"--auth-header-user-field-name=X-Auth-Request-User",
+					"--auth-header-groups-field-name=X-Auth-Request-Groups",
+				},
+				Ports: []corev1.ContainerPort{{
+					Name:          workspaceKubeRbacProxyServicePortName,
+					ContainerPort: workspaceKubeRbacProxyPort,
+					Protocol:      corev1.ProtocolTCP,
+				}},
+				LivenessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
+							Path:   "/healthz",
+							Port:   intstr.FromInt32(workspaceKubeRbacProxyHealthPort),
+							Scheme: corev1.URISchemeHTTPS,
+						},
+					},
+					InitialDelaySeconds: 30,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       5,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				},
+				ReadinessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
+							Path:   "/healthz",
+							Port:   intstr.FromInt32(workspaceKubeRbacProxyHealthPort),
+							Scheme: corev1.URISchemeHTTPS,
+						},
+					},
+					InitialDelaySeconds: 5,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       5,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("200m"),
+						corev1.ResourceMemory: resource.MustParse("128Mi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("200m"),
+						corev1.ResourceMemory: resource.MustParse("256Mi"),
+					},
+				},
+				VolumeMounts: []corev1.VolumeMount{
+					{
+						Name:      workspaceKubeRbacProxyConfigVolumeName,
+						MountPath: workspaceKubeRbacProxyConfigMountPath,
+					},
+					{
+						Name:      workspaceKubeRbacProxyTLSCertsVolumeName,
+						MountPath: workspaceKubeRbacProxyTLSCertsMountPath,
+					},
+				},
+			}
+
+			// generate the volumes required by the sidecar
+			volumes = []corev1.Volume{
+				{
+					Name: workspaceKubeRbacProxyConfigVolumeName,
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: fmt.Sprintf("ws-%s-kube-rbac-proxy-config", workspace.Name),
+							},
+						},
+					},
+				},
+				{
+					Name: workspaceKubeRbacProxyTLSCertsVolumeName,
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: fmt.Sprintf("ws-%s-kube-rbac-proxy-tls", workspace.Name),
+						},
+					},
+				},
+			}
+		}
+		break
+	}
+
+	return sidecar, volumes
+}
+
+// generateKubeRBACProxyClusterRoleBinding generates a KubeRBACProxyClusterRoleBinding for a Workspace
+func (r *WorkspaceReconciler) generateKubeRBACProxyClusterRoleBinding(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *rbacv1.ClusterRoleBinding {
+	kubeRBACProxyClusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("ws-%s-rbac-%s-auth-delegator", workspace.Name, workspace.Namespace),
+			Labels: map[string]string{
+				workspaceNameLabel:         workspace.Name,
+				"opendatahub.io/component": "workspace",
+				"opendatahub.io/namespace": workspace.Namespace,
+			},
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      workspaceKind.Spec.PodTemplate.ServiceAccount.Name,
+				Namespace: workspace.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "system:auth-delegator",
+		},
+	}
+	return kubeRBACProxyClusterRoleBinding
+}
+
+// generateKubeRBACProxyConfigMap generates a KubeRBACProxyConfigMap for a Workspace
+func (r *WorkspaceReconciler) generateKubeRBACProxyConfigMap(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *corev1.ConfigMap {
+
+	kubeRBACProxyConfigMapData := fmt.Sprintf(`authorization:
+  resourceAttributes:
+    verb: get
+    resource: workspaces
+    apiGroup: kubeflow.org
+    name: %s
+    namespace: %s`, workspace.Name, workspace.Namespace)
+
+	kubeRBACProxyConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("ws-%s-kube-rbac-proxy-config", workspace.Name),
+			Namespace: workspace.Namespace,
+			Labels: map[string]string{
+				workspaceNameLabel:         workspace.Name,
+				"opendatahub.io/component": "workspace",
+				"opendatahub.io/namespace": workspace.Namespace,
+			},
+		},
+		Data: map[string]string{
+			"config-file.yaml": kubeRBACProxyConfigMapData,
+		},
+	}
+	return kubeRBACProxyConfigMap
+}
+
+// generateKubeRBACProxyService generates a KubeRBACProxyService for a Workspace
+func (r *WorkspaceReconciler) generateKubeRBACProxyService(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *corev1.Service {
+	kubeRBACProxyService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("ws-%s-kube-rbac-proxy", workspace.Name),
+			Namespace: workspace.Namespace,
+			Labels: map[string]string{
+				workspaceNameLabel:            workspace.Name,
+				"app.kubernetes.io/component": "kube-rbac-proxy",
+				"opendatahub.io/component":    "workspace",
+				"opendatahub.io/namespace":    workspace.Namespace,
+			},
+			Annotations: map[string]string{
+				"service.beta.openshift.io/serving-cert-secret-name": "ws-" + workspace.Name + "-kube-rbac-proxy-tls",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Name:       workspaceKubeRbacProxyServicePortName,
+					Port:       workspaceKubeRbacProxyPort,
+					TargetPort: intstr.FromString(workspaceKubeRbacProxyServicePortName),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{
+				workspaceNameLabel: workspace.Name,
+			},
+		},
+	}
+	return kubeRBACProxyService
+}
+
+// generateHTTPRoute generates an HTTPRoute for a given port configuration
+func (r *WorkspaceReconciler) generateGatewayV1HTTPRoute(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *gatewayv1.HTTPRoute {
+
+	currentPodTemplatePortsMap := make(map[kubefloworgv1beta1.PortId]kubefloworgv1beta1.WorkspaceKindPort)
+	for _, port := range workspaceKind.Spec.PodTemplate.Ports {
+		currentPodTemplatePortsMap[port.Id] = port
+	}
+
+	var httpRoute *gatewayv1.HTTPRoute
+	for _, imageConfigPort := range imageConfigSpec.Ports {
+		// silently ignore port ids not defined in the workspace kind
+		// NOTE: this should not be possible as the webhook blocks undefined ports
+		if _, exists := currentPodTemplatePortsMap[imageConfigPort.Id]; !exists {
+			continue
+		}
+
+		podTemplatePort := currentPodTemplatePortsMap[imageConfigPort.Id]
+
+		// Additional Cases would be added for SSH, etc.
+		switch podTemplatePort.Protocol { //nolint:gocritic
+		case kubefloworgv1beta1.ImagePortProtocolHTTP:
+			// Generate notebook path: /workspace/connect/{namespace}/{notebook-name}/{port-id}
+			notebookPath := fmt.Sprintf(workspaceConnectPathTemplate, workspace.Namespace, workspace.Name, imageConfigPort.Id)
+			httpRoute = &gatewayv1.HTTPRoute{
+				ObjectMeta: metav1.ObjectMeta{
+					// Use a deterministic name (not GenerateName) so we can find it for cleanup
+					Name:      fmt.Sprintf("ws-%s-%s", workspace.Namespace, workspace.Name),
+					Namespace: r.Config.ControllerNamespace, // HTTPRoute is in controller namespace
+					Labels: map[string]string{
+						workspaceNameLabel:   workspace.Name,
+						"notebook-name":      workspace.Name,
+						"notebook-namespace": workspace.Namespace, // Track source namespace for cleanup
+					},
+				},
+				Spec: gatewayv1.HTTPRouteSpec{
+					CommonRouteSpec: gatewayv1.CommonRouteSpec{
+						ParentRefs: []gatewayv1.ParentReference{
+							{
+								Name:      gatewayv1.ObjectName(r.Config.KubeGatewayName),
+								Namespace: (*gatewayv1.Namespace)(&r.Config.KubeGatewayNamespace),
+							},
+						},
+					},
+					Rules: []gatewayv1.HTTPRouteRule{
+						{
+							Matches: []gatewayv1.HTTPRouteMatch{
+								{
+									Path: &gatewayv1.HTTPPathMatch{
+										Type:  ptr.To(gatewayv1.PathMatchPathPrefix),
+										Value: &notebookPath,
+									},
+								},
+							},
+							BackendRefs: []gatewayv1.HTTPBackendRef{
+								{
+									BackendRef: gatewayv1.BackendRef{
+										BackendObjectReference: gatewayv1.BackendObjectReference{
+											Name:      gatewayv1.ObjectName(service.Name),           // Service name
+											Namespace: (*gatewayv1.Namespace)(&workspace.Namespace), // Cross-namespace reference
+											Port:      ptr.To(gatewayv1.PortNumber(workspaceKubeRbacProxyPort)),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+		}
+	}
+
+	return httpRoute
 }
 
 // generateWorkspaceStatus generates a WorkspaceStatus for a Workspace

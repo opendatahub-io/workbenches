@@ -17,11 +17,18 @@ limitations under the License.
 package helper
 
 import (
+	"reflect"
+
 	"google.golang.org/protobuf/proto"
 	istiov1 "istio.io/client-go/pkg/apis/networking/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
+
+	kubefloworgv1beta1 "github.com/kubeflow/notebooks/workspaces/controller/api/v1beta1"
 )
 
 // copyLabelFields copies metadata.labels from desired to target, returning the updated map and whether an update is required.
@@ -160,4 +167,121 @@ func CopyVirtualServiceFields(desired *istiov1.VirtualService, target *istiov1.V
 	}
 
 	return requireUpdate
+}
+
+// CopyHTTPRouteFields updates a target HTTPRoute with the fields from a desired HTTPRoute, returning true if an update is required.
+func CopyHTTPRouteFields(desired *gatewayv1.HTTPRoute, target *gatewayv1.HTTPRoute) bool {
+	requireUpdate := false
+
+	// copy `metadata.labels`
+	var updated bool
+	target.Labels, updated = copyLabelFields(desired.Labels, target.Labels)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `metadata.annotations`
+	target.Annotations, updated = copyAnnotationFields(desired.Annotations, target.Annotations)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `spec`
+	if !reflect.DeepEqual(target.Spec, desired.Spec) {
+		target.Spec = desired.Spec
+		requireUpdate = true
+	}
+
+	return requireUpdate
+}
+
+// CopyReferenceGrantFields updates a target ReferenceGrant with the fields from a desired ReferenceGrant, returning true if an update is required.
+func CopyReferenceGrantFields(desired *gatewayv1beta1.ReferenceGrant, target *gatewayv1beta1.ReferenceGrant) bool {
+	requireUpdate := false
+
+	// copy `metadata.labels`
+	var updated bool
+	target.Labels, updated = copyLabelFields(desired.Labels, target.Labels)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `metadata.annotations`
+	target.Annotations, updated = copyAnnotationFields(desired.Annotations, target.Annotations)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `spec`
+	if !reflect.DeepEqual(target.Spec, desired.Spec) {
+		target.Spec = desired.Spec
+		requireUpdate = true
+	}
+
+	return requireUpdate
+}
+
+// NormalizePodConfigSpec normalizes a PodConfigSpec so that it can be compared with reflect.DeepEqual
+func NormalizePodConfigSpec(spec kubefloworgv1beta1.PodConfigSpec) error {
+
+	// normalize Affinity
+	if spec.Affinity != nil {
+
+		// set Affinity to nil if it is empty
+		if reflect.DeepEqual(spec.Affinity, corev1.Affinity{}) {
+			spec.Affinity = nil
+		}
+	}
+
+	// normalize NodeSelector
+	if spec.NodeSelector != nil {
+
+		// set NodeSelector to nil if it is empty
+		if len(spec.NodeSelector) == 0 {
+			spec.NodeSelector = nil
+		}
+	}
+
+	// normalize Tolerations
+	if spec.Tolerations != nil {
+
+		// set Tolerations to nil if it is empty
+		if len(spec.Tolerations) == 0 {
+			spec.Tolerations = nil
+		}
+	}
+
+	// normalize Resources
+	if spec.Resources != nil {
+
+		// if Resources.Requests is empty, set it to nil
+		if len(spec.Resources.Requests) == 0 {
+			spec.Resources.Requests = nil
+		} else {
+			// otherwise, normalize the values in Resources.Requests
+			for key, value := range spec.Resources.Requests {
+				q, err := resource.ParseQuantity(value.String())
+				if err != nil {
+					return err
+				}
+				spec.Resources.Requests[key] = q
+			}
+		}
+
+		// if Resources.Limits is empty, set it to nil
+		if len(spec.Resources.Limits) == 0 {
+			spec.Resources.Limits = nil
+		} else {
+			// otherwise, normalize the values in Resources.Limits
+			for key, value := range spec.Resources.Limits {
+				q, err := resource.ParseQuantity(value.String())
+				if err != nil {
+					return err
+				}
+				spec.Resources.Limits[key] = q
+			}
+		}
+	}
+
+	return nil
 }
