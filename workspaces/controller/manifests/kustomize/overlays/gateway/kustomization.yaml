@@ -27,28 +27,22 @@ patches:
       value: redhat-ods-applications
   target:
     kind: ClusterRoleBinding
-    name: manager-rolebinding
+    name: workspaces-manager-rolebinding
 - patch: |-
     - op: replace
       path: /subjects/0/namespace
       value: redhat-ods-applications
   target:
     kind: RoleBinding
-    name: leader-election-rolebinding
-- patch: |-
-    - op: remove
-      path: /metadata/labels/app.kubernetes.io~1component
-    - op: remove
-      path: /metadata/labels/app.kubernetes.io~1name
-  target:
-    kind: Namespace
-    name: kubeflow-workspaces
+    name: workspaces-leader-election-rolebinding
 - patch: |-
     - op: add
       path: /spec/template/spec/containers/0/env/-
       value:
         name: ENABLE_WEBHOOKS
         value: "false"
+    - op: remove
+      path: /spec/template/spec/containers/0/securityContext/runAsUser
   target:
     kind: Deployment
     name: workspaces-controller
