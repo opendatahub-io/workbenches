@@ -39,12 +39,15 @@ npm run test:cypress-ci -- --spec "cypress/tests/mocked/workspaces/workspaces.cy
 - [Running Tests](#running-tests)
 - [Debugging Tests](#debugging-tests)
 - [Project Structure](#project-structure)
+- [Skill Playbooks](#skill-playbooks)
+- [Skill Selection Matrix](#skill-selection-matrix)
 - [Common Pitfalls Summary](#common-pitfalls-summary)
 - [Common Tasks](#common-tasks)
 - [Out of Scope](#out-of-scope)
+- [Response Contract](#response-contract)
 - [Quick Reference](#quick-reference)
 
-**For detailed patterns and examples, see [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md).**
+**Primary source of truth:** this file + skills in `../../../../../.agents/skills/`.
 
 ---
 
@@ -186,64 +189,82 @@ cypress/
 
 ---
 
+## Skill Playbooks
+
+Use these skills for executable workflows:
+
+- Guardrails: [`../../../../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md`](../../../../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md)
+- E2E authoring: [`../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md`](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md)
+- API mocks/builders: [`../../../../../.agents/skills/kubeflow-notebooks-cypress-api-mocking-and-builders/SKILL.md`](../../../../../.agents/skills/kubeflow-notebooks-cypress-api-mocking-and-builders/SKILL.md)
+- Page object design: [`../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md`](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md)
+- Wait/sync strategy: [`../../../../../.agents/skills/kubeflow-notebooks-cypress-waiting-strategies/SKILL.md`](../../../../../.agents/skills/kubeflow-notebooks-cypress-waiting-strategies/SKILL.md)
+- Flake triage: [`../../../../../.agents/skills/kubeflow-notebooks-cypress-flake-triage/SKILL.md`](../../../../../.agents/skills/kubeflow-notebooks-cypress-flake-triage/SKILL.md)
+
+---
+
+## Skill Selection Matrix
+
+Select every skill that applies to the task. A feature may need multiple skills.
+
+| If the task involves...                       | Core skill                                                                    | Also consider                                                                            |
+| --------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Authoring or extending E2E scenarios          | [`kubeflow-notebooks-cypress-e2e-authoring`](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md) | [`kubeflow-notebooks-cypress-page-object-design`](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md) |
+| Building mocks/builders and intercept setup   | [`kubeflow-notebooks-cypress-api-mocking-and-builders`](../../../../../.agents/skills/kubeflow-notebooks-cypress-api-mocking-and-builders/SKILL.md) | [`kubeflow-notebooks-cypress-e2e-authoring`](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md) |
+| Refactoring/expanding page object APIs        | [`kubeflow-notebooks-cypress-page-object-design`](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md) | [`kubeflow-notebooks-cypress-e2e-authoring`](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md) |
+| Fixing timing, flake, synchronization issues  | [`kubeflow-notebooks-cypress-waiting-strategies`](../../../../../.agents/skills/kubeflow-notebooks-cypress-waiting-strategies/SKILL.md) | [`kubeflow-notebooks-cypress-flake-triage`](../../../../../.agents/skills/kubeflow-notebooks-cypress-flake-triage/SKILL.md) |
+| Investigating intermittent failures           | [`kubeflow-notebooks-cypress-flake-triage`](../../../../../.agents/skills/kubeflow-notebooks-cypress-flake-triage/SKILL.md) | [`kubeflow-notebooks-cypress-waiting-strategies`](../../../../../.agents/skills/kubeflow-notebooks-cypress-waiting-strategies/SKILL.md) |
+
+Fallback:
+
+- If no row clearly matches, use [`kubeflow-notebooks-global-guardrails`](../../../../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md) and ask for clarification.
+
+---
+
 ## Common Pitfalls Summary
 
-| Category         | Key Rule                                                 | See Patterns                                                                  |
-| ---------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| **Selectors**    | Always use `cy.findByTestId()`, never CSS selectors      | [Core Principle](#core-principle-use-data-testid-with-cyfindbytestid)         |
-| **Waits**        | Wait for `@alias`, never `cy.wait(ms)`                   | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#testing-best-practices)             |
-| **Independence** | Use `beforeEach`, never `before` for setup               | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#testing-best-practices)             |
-| **Mock Data**    | Use builder functions, never inline objects              | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#core-patterns)                      |
-| **Descriptions** | Describe behavior, not implementation                    | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#code-conventions)                   |
-| **Setup**        | Small composable functions, not monolithic               | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#common-patterns-and-best-practices) |
-| **Page Objects** | Encapsulate UI details, separate actions from assertions | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#test-architecture)                  |
-| **State**        | Keep test data local, never share mutables               | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#testing-best-practices)             |
-| **Commands**     | Return chainables, use named params                      | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#common-tasks)                       |
-| **Functions**    | Use named object params for 2+ arguments                 | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#function-signature-patterns)        |
+| Category         | Key Rule                                                 | See Skill                                                                                             |
+| ---------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Selectors**    | Use `cy.findByTestId()`; do not use CSS selectors        | [Core Principle](#core-principle-use-data-testid-with-cyfindbytestid)                                 |
+| **Waits**        | Wait for `@alias`; do not use `cy.wait(ms)`              | [`kubeflow-notebooks-cypress-waiting-strategies`](../../../../../.agents/skills/kubeflow-notebooks-cypress-waiting-strategies/SKILL.md) |
+| **Independence** | Use `beforeEach`; do not use `before` for setup          | [`kubeflow-notebooks-cypress-e2e-authoring`](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md) |
+| **Mock Data**    | Use builder functions; do not inline mock objects        | [`kubeflow-notebooks-cypress-api-mocking-and-builders`](../../../../../.agents/skills/kubeflow-notebooks-cypress-api-mocking-and-builders/SKILL.md) |
+| **Descriptions** | Describe behavior; avoid implementation details           | [`kubeflow-notebooks-cypress-page-object-design`](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md) |
+| **Setup**        | Keep setup small and composable; avoid monoliths         | [`kubeflow-notebooks-cypress-api-mocking-and-builders`](../../../../../.agents/skills/kubeflow-notebooks-cypress-api-mocking-and-builders/SKILL.md) |
+| **Page Objects** | Encapsulate UI details, separate actions from assertions | [`kubeflow-notebooks-cypress-page-object-design`](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md) |
+| **State**        | Keep test data local; do not share mutable state         | [`kubeflow-notebooks-cypress-e2e-authoring`](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md) |
+| **Commands**     | Return chainables, use named params                      | [`kubeflow-notebooks-cypress-page-object-design`](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md) |
+| **Functions**    | Use named object params for 2+ arguments                 | [`kubeflow-notebooks-cypress-page-object-design`](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md) |
 
 ---
 
 ## Common Tasks
 
-### Adding a new test file
+Use the skill playbooks above for task execution, especially:
 
-1. Create file in `cypress/tests/mocked/[feature]/[testName].cy.ts`
-2. Import required page objects and builders
-3. Set up API mocks in `beforeEach`
-4. Write test cases following existing patterns
-
-### Adding a new page object
-
-1. Create class in `cypress/pages/[feature]/[pageName].ts`
-2. Add `find*()` methods for locating elements
-3. Add action methods (`click*()`, `select*()`, `type*()`)
-4. Add `assert*()` methods for verification
-5. Export singleton instance at bottom of file
-
-### Adding a custom command
-
-1. Create or update file in `cypress/support/commands/`
-2. Add TypeScript declaration in the file
-3. Implement command with `Cypress.Commands.add()`
-4. Use named object parameters for 2+ arguments
-5. Return chainable for method chaining
-
-### Adding a data-testid to a component
-
-1. Open the React component file
-2. Add `data-testid="descriptive-name"` attribute
-3. Use kebab-case naming (e.g., `workspace-table-row`)
-4. Update page object to use `cy.findByTestId('descriptive-name')`
+- New E2E tests: `kubeflow-notebooks-cypress-e2e-authoring`
+- API mocks/builders: `kubeflow-notebooks-cypress-api-mocking-and-builders`
+- Page object work: `kubeflow-notebooks-cypress-page-object-design`
+- Timing and waits: `kubeflow-notebooks-cypress-waiting-strategies`
+- Flake triage: `kubeflow-notebooks-cypress-flake-triage`
 
 ---
 
 ## Out of Scope
 
-- Unit tests (use Jest instead - see [Frontend Testing Guidelines](../../../AGENTS.md#testing-guidelines))
-- Backend API testing (use [backend tests](../../../../backend/AGENTS.md#testing-guidelines))
+- Unit tests (use frontend module guidance in [`../../../AGENTS.md`](../../../AGENTS.md))
+- Backend API testing (use backend module guidance in [`../../../../backend/AGENTS.md`](../../../../backend/AGENTS.md))
 - Performance/load testing
 - Real browser E2E tests (all tests are mocked)
 - Visual regression testing
+
+---
+
+## Response Contract
+
+- Follow global response contract in [`../../../../../AGENTS.md`](../../../../../AGENTS.md#response-contract).
+- Final response must end with `Files Used` list relevant to this task.
+- `Files Used` must include cypress-relevant `AGENTS.md` and any `SKILL.md` files applied.
+- Do not list source files in `Files Used` unless explicitly requested by the user.
 
 ---
 
@@ -272,17 +293,17 @@ cypress/
 
 ### Test Pattern Template
 
-> **See [AGENTS-PATTERNS.md - Test Pattern Template](./AGENTS-PATTERNS.md#test-pattern-template)** for the full template.
+> **See [Cypress E2E Authoring Skill](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md)** for the current test template workflow.
 
 ### Page Object Template
 
-> **See [AGENTS-PATTERNS.md - Page Object Template](./AGENTS-PATTERNS.md#page-object-template)** for the full template.
+> **See [Cypress Page Object Design Skill](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md)** for the current page object template workflow.
 
 ### Pre-Task Checklist
 
 - [ ] Check if UI component has `data-testid` (add if missing)
-- [ ] Create or update Page Object for the page
+- [ ] Create or update a page object for the page
 - [ ] Set up API mocks with `cy.interceptApi()`
-- [ ] Use `findByTestId()` for all selectors
+- [ ] Use `cy.findByTestId()` for all selectors
 - [ ] Verify test is independent (no reliance on other tests)
-- [ ] Run test multiple times to check for flakiness
+- [ ] Run tests multiple times to check for flakiness

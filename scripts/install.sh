@@ -104,7 +104,7 @@ print_message "  Source: $REPO_ROOT"
 print_message "  Target: $TARGET_ROOT"
 print_message ""
 
-print_info "Installing agents..."
+print_info "Installing mapped AI rules..."
 
 process_mappings create_link
 

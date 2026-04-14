@@ -83,7 +83,7 @@ validate_mappings_file || exit 1
 print_message "Uninstalling AI rules from: $TARGET_ROOT"
 print_message ""
 
-print_info "Removing agents..."
+print_info "Removing mapped AI rules..."
 
 process_mappings remove_link
 

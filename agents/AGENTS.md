@@ -18,10 +18,45 @@ You are an expert software engineer for the Kubeflow Notebooks project.
 This document defines global rules for automated agents operating in this repository.
 These rules apply everywhere and cannot be overridden by local policies.
 
+---
+
+## STOP — Skill Routing Required Before Any Code Changes
+
+**Do NOT write or modify any code until you complete these steps:**
+
+1. Identify the primary module (`backend`, `controller`, `frontend`, `cypress`) from the task.
+2. Read that module's `AGENTS.md` and its `Skill Playbooks` section.
+3. **Always include `kubeflow-notebooks-global-guardrails`** — it applies to every coding task (preflight, verification, escalation).
+4. From the module's Skill Selection Matrix, select **every additional skill that applies** to the task. A feature that touches components, state, and requires Cypress tests needs all those skills. Do not artificially limit yourself.
+5. **Frontend tasks — Cypress gate:** If the task is in the `frontend` module and changes user-visible behavior (new routes, form changes, table actions, navigation, modals, CRUD workflows), you **MUST** also:
+   - Read the [Cypress AGENTS.md](workspaces/frontend/src/__tests__/cypress/AGENTS.md).
+   - Add the relevant Cypress skill (typically `kubeflow-notebooks-cypress-e2e-authoring`) to your selected skills.
+   - This is mandatory, not optional. See [Cypress Coverage Gate](workspaces/frontend/AGENTS.md#cypress-coverage-gate) for the full decision rules.
+6. **Read the full `SKILL.md` file** for each selected skill (including guardrails). Declaring a skill without reading it is a protocol violation.
+7. If no task-specific match exists beyond guardrails, ask for clarification instead of guessing.
+8. Publish the routing declaration below.
+
+```text
+Skill Plan
+- Skills: <skill-id>, <skill-id>, ...
+- AGENTS consulted: <path>, <path>
+- Cypress gate: triggered / not triggered
+- Key instruction per skill:
+  - <skill-id>: <quote one concrete step or rule from that SKILL.md>
+  - <skill-id>: <quote one concrete step or rule from that SKILL.md>
+```
+
+The `Key instruction` entries prove each skill was actually read. If any cannot be filled, routing is incomplete. **Do not proceed.**
+
+See [Skill Routing Protocol](#skill-routing-protocol) for selection priorities and additional details.
+
+---
+
 ## Table of Contents
 
 - [Scope](#scope)
 - [Precedence](#precedence)
+- [Skill Routing Protocol](#skill-routing-protocol)
 - [Agent Behavior](#agent-behavior)
 - [Repository Structure](#repository-structure)
 - [Technology Stack](#technology-stack)
@@ -39,6 +74,7 @@ These rules apply everywhere and cannot be overridden by local policies.
 - [Kubernetes Best Practices](#kubernetes-best-practices)
 - [Common Coding Pitfalls](#common-coding-pitfalls)
 - [Module-Specific Guidelines](#module-specific-guidelines)
+- [Response Contract](#response-contract)
 - [Quick Reference](#quick-reference)
 
 ## Rule Severity
@@ -77,7 +113,20 @@ Agents **MUST NOT**:
 
 ### Following Links
 
-When this document or any `AGENTS.md` file links to another `AGENTS.md` or `AGENTS-PATTERNS.md` file, agents **MUST** read the linked file before proceeding with the task. Do not assume the content; always fetch and read it.
+When this document or any `AGENTS.md` file links to another `AGENTS.md` file or skill playbook, agents **MUST** read the linked file before proceeding with the task. Do not assume the content; always fetch and read it.
+
+---
+
+## Skill Routing Protocol
+
+The mandatory steps and routing declaration are defined at the top of this file in [STOP — Skill Routing Required Before Any Code Changes](#stop--skill-routing-required-before-any-code-changes). Complete that gate before writing any code.
+
+Selection guidance:
+
+- Select every skill whose concern is touched by the task. Do not artificially limit the count.
+- Do not load two skills that cover the same concern (e.g., two testing skills for the same test type).
+- Prefer specific task skills over broad governance guidance.
+- Keep policy interpretation in `AGENTS.md`; keep execution details in `SKILL.md`.
 
 ---
 
@@ -383,6 +432,13 @@ All code changes **SHOULD** include appropriate tests:
 - **Refactoring**: Ensure existing tests still pass
 - **API changes**: Update integration tests accordingly
 
+Frontend-specific gate (**mandatory**):
+
+- If a frontend change affects user-visible workflow, navigation, forms, table actions, or API-driven UI states, the agent **MUST** read and follow the [Cypress Coverage Gate](workspaces/frontend/AGENTS.md#cypress-coverage-gate) in the frontend module.
+- When Cypress triggers match (new route, form change, table action, navigation, modal, CRUD workflow), tests **MUST** be added in the same changeset. Deferring to a follow-up is not acceptable.
+- The final response **MUST** include a `Cypress Gate` section listing which triggers matched and what tests were added (or stating no triggers matched).
+- Omitting this evaluation for user-visible changes is a protocol violation.
+
 **Test quality:**
 
 - ✅ **DO**: Write specific, meaningful tests with descriptive names
@@ -663,6 +719,30 @@ Each module has its own AGENTS.md file with detailed guidance:
 - **[Cypress Testing Guidelines](workspaces/frontend/src/__tests__/cypress/AGENTS.md)** - E2E testing, page objects, test patterns
 
 **Agents MUST read the module-specific guidelines when working in that module.**
+
+---
+
+## Response Contract
+
+All final responses **MUST** end with a `Files Used` section.
+
+Requirements:
+
+- Must include all `AGENTS.md` files consulted.
+- Must include all `SKILL.md` files selected/applied.
+- Do **not** include source code files by default.
+- Include source code files only if the user explicitly asks for full file traceability.
+- Use repository-relative paths when possible.
+- If no files were used, write `Files Used: none`.
+- This section must be the last section of the final response.
+
+Format:
+
+```text
+Files Used
+- path/to/file1
+- path/to/file2
+```
 
 ---
 

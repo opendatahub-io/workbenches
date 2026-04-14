@@ -93,7 +93,7 @@ validate_mappings_file || exit 1
 print_message "Checking AI rules in: $TARGET_ROOT"
 print_message ""
 
-print_info "Checking agents..."
+print_info "Checking mapped AI rules..."
 
 process_mappings check_link
 

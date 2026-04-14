@@ -50,16 +50,20 @@ npm run build
 - [Scope of Responsibility](#scope-of-responsibility)
 - [Technology Stack](#technology-stack)
 - [Project Structure](#project-structure)
+- [Skill Playbooks](#skill-playbooks)
+- [Skill Selection Matrix](#skill-selection-matrix)
 - [Generated Code](#generated-code)
 - [Development Commands](#development-commands)
 - [Code Conventions](#code-conventions)
 - [Common Pitfalls Summary](#common-pitfalls-summary)
 - [Common Tasks](#common-tasks)
+- [Cypress Coverage Gate](#cypress-coverage-gate)
 - [Troubleshooting](#troubleshooting)
 - [Out of Scope](#out-of-scope)
+- [Response Contract](#response-contract)
 - [Quick Reference](#quick-reference)
 
-**For detailed patterns and examples, see [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md).**
+**Primary source of truth:** this file + skills in `../../.agents/skills/`.
 
 ---
 
@@ -157,6 +161,39 @@ frontend/
 
 ---
 
+## Skill Playbooks
+
+Use these skills for executable workflows:
+
+- Guardrails: [`../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md`](../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md)
+- Component authoring: [`../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md)
+- API integration: [`../../.agents/skills/kubeflow-notebooks-frontend-api-integration/SKILL.md`](../../.agents/skills/kubeflow-notebooks-frontend-api-integration/SKILL.md)
+- State/context design: [`../../.agents/skills/kubeflow-notebooks-frontend-state-and-context/SKILL.md`](../../.agents/skills/kubeflow-notebooks-frontend-state-and-context/SKILL.md)
+- Hook/effect refactors: [`../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md)
+- Jest/RTL testing: [`../../.agents/skills/kubeflow-notebooks-frontend-jest-rtl-testing/SKILL.md`](../../.agents/skills/kubeflow-notebooks-frontend-jest-rtl-testing/SKILL.md)
+- Generated artifacts: [`../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md`](../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md)
+
+---
+
+## Skill Selection Matrix
+
+Select every skill that applies to the task. A feature may need multiple skills.
+
+| If the task involves...                       | Core skill                                                                    | Also consider                                                                            |
+| --------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Creating/updating components or pages         | [`kubeflow-notebooks-frontend-component-authoring`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md) | [`kubeflow-notebooks-frontend-jest-rtl-testing`](../../.agents/skills/kubeflow-notebooks-frontend-jest-rtl-testing/SKILL.md) |
+| Wiring UI to backend API data                 | [`kubeflow-notebooks-frontend-api-integration`](../../.agents/skills/kubeflow-notebooks-frontend-api-integration/SKILL.md) | [`kubeflow-notebooks-generated-code-regeneration`](../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md) |
+| Refactoring state ownership or context usage  | [`kubeflow-notebooks-frontend-state-and-context`](../../.agents/skills/kubeflow-notebooks-frontend-state-and-context/SKILL.md) | [`kubeflow-notebooks-frontend-hook-and-useeffect-refactor`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md) |
+| Untangling complex hooks/useEffect behavior   | [`kubeflow-notebooks-frontend-hook-and-useeffect-refactor`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md) | [`kubeflow-notebooks-frontend-jest-rtl-testing`](../../.agents/skills/kubeflow-notebooks-frontend-jest-rtl-testing/SKILL.md) |
+| Writing/updating RTL regression coverage      | [`kubeflow-notebooks-frontend-jest-rtl-testing`](../../.agents/skills/kubeflow-notebooks-frontend-jest-rtl-testing/SKILL.md) | [`kubeflow-notebooks-frontend-component-authoring`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md) |
+| Changing user flows requiring browser coverage | [`kubeflow-notebooks-cypress-e2e-authoring`](../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md) | [`kubeflow-notebooks-cypress-page-object-design`](../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md) |
+
+Fallback:
+
+- If no row clearly matches, use [`kubeflow-notebooks-global-guardrails`](../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md) and ask for clarification.
+
+---
+
 ## Generated Code
 
 **Never manually modify:**
@@ -213,7 +250,7 @@ npm run test
 - Use `unknown` if the type is truly unknown, then narrow with type guards
 - Use generics for reusable typed components
 
-> **See [AGENTS-PATTERNS.md - TypeScript Type Safety](./AGENTS-PATTERNS.md#typescript-type-safety-critical)** for examples.
+> **See [Frontend Component Authoring Skill](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md)** for typed component examples.
 
 ### Code Cleanliness
 
@@ -223,47 +260,64 @@ npm run test
 
 ## Common Pitfalls Summary
 
-| Category        | Key Rule                                                   | See Patterns                                                                   |
-| --------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **Imports**     | Use specific PatternFly imports, not barrel imports        | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#import-patterns)                     |
-| **PatternFly**  | Use variants/utilities, never override styles              | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#ui--ux-guidelines)                   |
-| **Context**     | Always memoize provider values, validate context exists    | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#react-context-patterns)              |
-| **Environment** | Centralize in `const.ts`, never use `process.env` directly | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#constants-and-environment-variables) |
-| **Errors**      | Never swallow silently, always show user feedback          | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#error-handling-patterns)             |
-| **State**       | Use custom hooks with loading/error states                 | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#state--data-flow)                    |
-| **Rendering**   | Use early returns, avoid nested ternaries                  | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#code-conventions)                    |
-| **Types**       | Avoid `any`, use type guards over assertions               | [Code Conventions](#typescript-type-safety-critical)                           |
-| **Functions**   | Use named object params for 2+ arguments                   | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#function-signature-patterns)         |
-| **Hooks**       | Extract complex useEffect (3+ state updates) to custom hook | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#useeffect-anti-patterns)             |
-| **Data Fetch**  | Use `useFetchState` for async data loading, not manual state | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#custom-hook-patterns)                |
-| **Functions**   | Refactor functions >30-40 lines or mixing multiple concerns  | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#function-complexity)                 |
-| **DRY**         | Extract duplicated code blocks into helper functions         | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#function-complexity)                 |
+| Category        | Key Rule                                                     | See Skill                                                                                             |
+| --------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Imports**     | Use specific PatternFly imports; avoid barrel imports        | [`kubeflow-notebooks-frontend-component-authoring`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md) |
+| **PatternFly**  | Use variants/utilities; do not override styles               | [`kubeflow-notebooks-frontend-component-authoring`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md) |
+| **Context**     | Memoize provider values and validate context presence        | [`kubeflow-notebooks-frontend-state-and-context`](../../.agents/skills/kubeflow-notebooks-frontend-state-and-context/SKILL.md) |
+| **Environment** | Centralize config in `const.ts`; do not use `process.env` directly | [`kubeflow-notebooks-frontend-component-authoring`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md) |
+| **Errors**      | Do not swallow errors silently; show user feedback           | [`kubeflow-notebooks-frontend-api-integration`](../../.agents/skills/kubeflow-notebooks-frontend-api-integration/SKILL.md) |
+| **State**       | Use custom hooks with loading/error states                   | [`kubeflow-notebooks-frontend-state-and-context`](../../.agents/skills/kubeflow-notebooks-frontend-state-and-context/SKILL.md) |
+| **Rendering**   | Use early returns and avoid nested ternaries                 | [`kubeflow-notebooks-frontend-component-authoring`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md) |
+| **Types**       | Avoid `any`; use type guards instead of assertions           | [Code Conventions](#typescript-type-safety-critical)                                                  |
+| **Functions**   | Use named object params for 2+ arguments                     | [`kubeflow-notebooks-frontend-component-authoring`](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md) |
+| **Hooks**       | Extract complex `useEffect` (3+ state updates) into a custom hook | [`kubeflow-notebooks-frontend-hook-and-useeffect-refactor`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md) |
+| **Data Fetch**  | Use `useFetchState` for async loading; avoid manual state wiring | [`kubeflow-notebooks-frontend-api-integration`](../../.agents/skills/kubeflow-notebooks-frontend-api-integration/SKILL.md) |
+| **Complexity**  | Refactor functions longer than 30-40 lines or with mixed concerns | [`kubeflow-notebooks-frontend-hook-and-useeffect-refactor`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md) |
+| **DRY**         | Extract duplicated code blocks into helper functions          | [`kubeflow-notebooks-frontend-hook-and-useeffect-refactor`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md) |
 
 ---
 
 ## Common Tasks
 
-### Adding a new page
+Use the skill playbooks above for task execution, especially:
 
-1. Create component in `src/app/pages/`
-2. Add route in `src/app/routes.ts`
-3. Update `src/app/AppRoutes.tsx`
-4. Add tests
+- Component/page work: `kubeflow-notebooks-frontend-component-authoring`
+- API workflows: `kubeflow-notebooks-frontend-api-integration`
+- Hook/effect refactors: `kubeflow-notebooks-frontend-hook-and-useeffect-refactor`
+- Unit/integration tests: `kubeflow-notebooks-frontend-jest-rtl-testing`
+- Browser workflow coverage: `kubeflow-notebooks-cypress-e2e-authoring`
 
-### Adding a new API endpoint integration
+---
 
-1. Wait for backend API changes to be merged
-2. Update `scripts/swagger.version` with new backend commit
-3. Regenerate OpenAPI client: `npm run generate:api`
-4. Use generated client in `src/shared/api/`
-5. Add appropriate error handling
+## Cypress Coverage Gate
 
-### Adding a new shared component
+**MUST** evaluate Cypress impact for any frontend task that alters user-visible behavior, routing, form submissions, table actions, or API-driven screen states. This gate is not optional.
 
-1. Create component in `src/shared/components/`
-2. Write tests
-3. Export from appropriate index file
-4. Document props with TypeScript types
+### Steps
+
+1. **Read** the Cypress module guidelines: [`../frontend/cypress/AGENTS.md`](../frontend/cypress/AGENTS.md). Do not skip this step.
+2. **Read** the relevant Cypress skill (typically [`kubeflow-notebooks-cypress-e2e-authoring`](../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md)).
+3. Evaluate the trigger checklist below.
+4. If **any trigger matches**, Cypress tests **MUST** be added or updated in the same changeset. See the decision rules below.
+5. Include a `Cypress Gate` section in the final response listing which triggers matched and what tests were added.
+
+### Trigger checklist
+
+Evaluate each item. If **one or more** are true, Cypress tests are **required** — not optional, not deferred.
+
+- [ ] New route or page added
+- [ ] Form behavior changed (fields, validation, submission)
+- [ ] Table row actions added or modified
+- [ ] Navigation flow changed
+- [ ] Modal or drawer added or modified
+- [ ] Delete/create/update workflow changed
+
+### Decision rules
+
+- **One or more triggers match → add Cypress tests.** "Recommend as follow-up" or "existing coverage is sufficient" are not acceptable justifications for skipping. New user flows require new test coverage even if they reuse existing components.
+- **No triggers match → skip is acceptable.** Include a `Cypress Gate` section stating no triggers matched and why.
+- **Genuinely blocked** (e.g., test infrastructure missing, external dependency unavailable) → state the blocker explicitly. This is the only valid reason to defer when triggers match.
 
 ---
 
@@ -302,10 +356,19 @@ npm run test:lint -- --format stylish
 The following are handled by other modules and **MUST NOT** be modified in frontend changes:
 
 - Backend logic and business rules (belongs to [backend module](../backend/AGENTS.md))
-- API contract changes (handled by [backend module](../backend/AGENTS.md#swagger--openapi-patterns))
-- Authentication or authorization implementation (belongs to [backend module](../backend/AGENTS.md#authentication--authorization))
-- Kubernetes resource definitions (belongs to [controller module](../controller/AGENTS.md#custom-resource-definitions-crds))
+- API contract changes (handled by [backend module](../backend/AGENTS.md))
+- Authentication or authorization implementation (belongs to [backend module](../backend/AGENTS.md))
+- Kubernetes resource definitions (belongs to [controller module](../controller/AGENTS.md))
 - Database or storage logic
+
+---
+
+## Response Contract
+
+- Follow global response contract in [`../../AGENTS.md`](../../AGENTS.md#response-contract).
+- Final response must end with `Files Used` list relevant to this task.
+- `Files Used` must include frontend-relevant `AGENTS.md` and any `SKILL.md` files applied.
+- Do not list source files in `Files Used` unless explicitly requested by the user.
 
 ---
 
@@ -341,7 +404,7 @@ The following are handled by other modules and **MUST NOT** be modified in front
 
 ### Component Pattern Template
 
-> **See [AGENTS-PATTERNS.md - Component Pattern Template](./AGENTS-PATTERNS.md#component-pattern-template)** for the full template.
+> **See [Frontend Component Authoring Skill](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md)** for the current component template workflow.
 
 ### Pre-Task Checklist
 

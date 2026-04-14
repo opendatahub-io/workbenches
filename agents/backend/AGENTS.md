@@ -47,6 +47,8 @@ make run
 - [Scope of Responsibility](#scope-of-responsibility)
 - [Technology Stack](#technology-stack)
 - [Project Structure](#project-structure)
+- [Skill Playbooks](#skill-playbooks)
+- [Skill Selection Matrix](#skill-selection-matrix)
 - [API Versioning](#api-versioning)
 - [Generated Code](#generated-code)
 - [Development Commands](#development-commands)
@@ -54,9 +56,10 @@ make run
 - [Common Pitfalls Summary](#common-pitfalls-summary)
 - [Troubleshooting](#troubleshooting)
 - [Out of Scope](#out-of-scope)
+- [Response Contract](#response-contract)
 - [Quick Reference](#quick-reference)
 
-**For detailed patterns and examples, see [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md).**
+**Primary source of truth:** this file + skills in `../../.agents/skills/`.
 
 ---
 
@@ -141,6 +144,37 @@ backend/
 
 ---
 
+## Skill Playbooks
+
+Use these skills for executable workflows:
+
+- Guardrails: [`../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md`](../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md)
+- Handler implementation: [`../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md)
+- Auth policy checks: [`../../.agents/skills/kubeflow-notebooks-backend-auth-policy-patterns/SKILL.md`](../../.agents/skills/kubeflow-notebooks-backend-auth-policy-patterns/SKILL.md)
+- OpenAPI updates: [`../../.agents/skills/kubeflow-notebooks-backend-openapi-update/SKILL.md`](../../.agents/skills/kubeflow-notebooks-backend-openapi-update/SKILL.md)
+- Backend tests: [`../../.agents/skills/kubeflow-notebooks-backend-ginkgo-test-authoring/SKILL.md`](../../.agents/skills/kubeflow-notebooks-backend-ginkgo-test-authoring/SKILL.md)
+- Generated artifacts: [`../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md`](../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md)
+
+---
+
+## Skill Selection Matrix
+
+Select every skill that applies to the task. A feature may need multiple skills.
+
+| If the task involves...                       | Core skill                                                                    | Also consider                                                                            |
+| --------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Implementing or changing endpoint handlers    | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) | [`kubeflow-notebooks-backend-ginkgo-test-authoring`](../../.agents/skills/kubeflow-notebooks-backend-ginkgo-test-authoring/SKILL.md) |
+| Updating authz/authn policy checks            | [`kubeflow-notebooks-backend-auth-policy-patterns`](../../.agents/skills/kubeflow-notebooks-backend-auth-policy-patterns/SKILL.md) | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| Changing API contract/OpenAPI output          | [`kubeflow-notebooks-backend-openapi-update`](../../.agents/skills/kubeflow-notebooks-backend-openapi-update/SKILL.md) | [`kubeflow-notebooks-generated-code-regeneration`](../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md) |
+| Writing or restructuring backend tests        | [`kubeflow-notebooks-backend-ginkgo-test-authoring`](../../.agents/skills/kubeflow-notebooks-backend-ginkgo-test-authoring/SKILL.md) | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| Regenerating artifacts after source changes   | [`kubeflow-notebooks-generated-code-regeneration`](../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md) | [`kubeflow-notebooks-backend-openapi-update`](../../.agents/skills/kubeflow-notebooks-backend-openapi-update/SKILL.md) |
+
+Fallback:
+
+- If no row clearly matches, use [`kubeflow-notebooks-global-guardrails`](../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md) and ask for clarification.
+
+---
+
 ## API Versioning
 
 **Current API version:** `v1`
@@ -208,7 +242,7 @@ make lint-fix
 
 **All model struct fields MUST use camelCase in JSON tags.**
 
-> **See [AGENTS-PATTERNS.md - JSON Naming Convention](./AGENTS-PATTERNS.md#json-naming-convention-critical)** for examples.
+> **See [Backend Handler Implementation Skill](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md)** for backend model and validation conventions.
 
 ### Code Cleanliness
 
@@ -218,19 +252,19 @@ make lint-fix
 
 ## Common Pitfalls Summary
 
-| Category        | Key Rule                                                      | See Patterns                                                         |
-| --------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- |
-| **Handlers**    | Always `return` after error response                          | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#handler-patterns)          |
-| **Validation**  | Accumulate all errors, don't fail early                       | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#validation-patterns)       |
-| **Repository**  | Convert k8s errors to custom errors                           | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#repository-patterns)       |
-| **Errors**      | Use `errors.Is()` / `apierrors.IsNotFound()`                  | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#error-handling)            |
-| **Testing**     | Use `BeforeEach` or `Ordered`, never share state              | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#testing-guidelines)        |
-| **JSON Tags**   | Add tags to all exported fields, use `omitempty` for optional | [Code Conventions](#code-conventions)                                |
-| **Pointers**    | Always check nil, use `ptr.Deref()`                           | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#go-best-practices)         |
-| **Maps/Slices** | Clone before modifying, never share references                | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#go-best-practices)         |
-| **Context**     | Propagate context, never use `context.Background()`           | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#go-best-practices)         |
-| **HTTP**        | One response per request, always return after write           | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#handler-patterns)          |
-| **Swagger**     | Run `make swag` after changes                                 | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#swagger--openapi-patterns) |
+| Category        | Key Rule                                                      | See Skill                                                                                         |
+| --------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Handlers**    | Return immediately after writing an error response            | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **Validation**  | Accumulate all validation errors; do not fail early           | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **Repository**  | Convert k8s errors to custom errors                           | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **Errors**      | Use `errors.Is()` / `apierrors.IsNotFound()`                  | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **Testing**     | Use `BeforeEach` or `Ordered`; do not share state             | [`kubeflow-notebooks-backend-ginkgo-test-authoring`](../../.agents/skills/kubeflow-notebooks-backend-ginkgo-test-authoring/SKILL.md) |
+| **JSON Tags**   | Add tags to all exported fields, use `omitempty` for optional | [Code Conventions](#code-conventions)                                                             |
+| **Pointers**    | Check for nil and use `ptr.Deref()`                           | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **Maps/Slices** | Clone before modifying; do not share references               | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **Context**     | Propagate context; do not use `context.Background()`          | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **HTTP**        | Write one response per request and return immediately         | [`kubeflow-notebooks-backend-handler-implementation`](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md) |
+| **Swagger**     | Run `make swag` after changes                                 | [`kubeflow-notebooks-backend-openapi-update`](../../.agents/skills/kubeflow-notebooks-backend-openapi-update/SKILL.md)                 |
 
 ---
 
@@ -270,7 +304,16 @@ The following are handled by other modules and **MUST NOT** be modified in backe
 - Frontend UI components and presentation logic (belongs to [frontend module](../frontend/AGENTS.md))
 - Kustomize manifests for controller (belongs to [controller module](../controller/AGENTS.md))
 
-**See also:** For CRD type definitions used in the backend, refer to [Controller CRD Types](../controller/AGENTS.md#custom-resource-definitions-crds).
+**See also:** For CRD type definitions used in the backend, refer to the controller module guidance in [`../controller/AGENTS.md`](../controller/AGENTS.md).
+
+---
+
+## Response Contract
+
+- Follow global response contract in [`../../AGENTS.md`](../../AGENTS.md#response-contract).
+- Final response must end with `Files Used` list relevant to this task.
+- `Files Used` must include backend-relevant `AGENTS.md` and any `SKILL.md` files applied.
+- Do not list source files in `Files Used` unless explicitly requested by the user.
 
 ---
 
@@ -300,7 +343,7 @@ The following are handled by other modules and **MUST NOT** be modified in backe
 
 ### Handler Pattern Template
 
-> **See [AGENTS-PATTERNS.md - Handler Pattern Template](./AGENTS-PATTERNS.md#handler-pattern-template)** for the full template.
+> **See [Backend Handler Implementation Skill](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md)** for the current handler template workflow.
 
 ### Pre-Task Checklist
 

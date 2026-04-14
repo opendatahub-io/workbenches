@@ -48,6 +48,8 @@ make lint
 - [Role of Controllers](#role-of-controllers)
 - [Technology Stack](#technology-stack)
 - [Project Structure](#project-structure)
+- [Skill Playbooks](#skill-playbooks)
+- [Skill Selection Matrix](#skill-selection-matrix)
 - [Generated Code](#generated-code)
 - [Development Commands](#development-commands)
 - [Code Conventions](#code-conventions)
@@ -59,9 +61,10 @@ make lint
 - [Common Tasks](#common-tasks)
 - [Troubleshooting](#troubleshooting)
 - [Out of Scope](#out-of-scope)
+- [Response Contract](#response-contract)
 - [Quick Reference](#quick-reference)
 
-**For detailed patterns and examples, see [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md).**
+**Primary source of truth:** this file + skills in `../../.agents/skills/`.
 
 ---
 
@@ -171,6 +174,38 @@ controller/
 
 ---
 
+## Skill Playbooks
+
+Use these skills for executable workflows:
+
+- Guardrails: [`../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md`](../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md)
+- CRD evolution: [`../../.agents/skills/kubeflow-notebooks-controller-crd-evolution/SKILL.md`](../../.agents/skills/kubeflow-notebooks-controller-crd-evolution/SKILL.md)
+- Reconcile pattern: [`../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md`](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md)
+- Status transitions: [`../../.agents/skills/kubeflow-notebooks-controller-status-transitions/SKILL.md`](../../.agents/skills/kubeflow-notebooks-controller-status-transitions/SKILL.md)
+- Webhook validation: [`../../.agents/skills/kubeflow-notebooks-controller-webhook-validation/SKILL.md`](../../.agents/skills/kubeflow-notebooks-controller-webhook-validation/SKILL.md)
+- RBAC/finalizers: [`../../.agents/skills/kubeflow-notebooks-controller-rbac-and-finalizers/SKILL.md`](../../.agents/skills/kubeflow-notebooks-controller-rbac-and-finalizers/SKILL.md)
+- Generated artifacts: [`../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md`](../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md)
+
+---
+
+## Skill Selection Matrix
+
+Select every skill that applies to the task. A feature may need multiple skills.
+
+| If the task involves...                        | Core skill                                                                    | Also consider                                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Changing CRD fields/markers/schema semantics   | [`kubeflow-notebooks-controller-crd-evolution`](../../.agents/skills/kubeflow-notebooks-controller-crd-evolution/SKILL.md) | [`kubeflow-notebooks-generated-code-regeneration`](../../.agents/skills/kubeflow-notebooks-generated-code-regeneration/SKILL.md) |
+| Implementing reconcile behavior                | [`kubeflow-notebooks-controller-reconcile-pattern`](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md) | [`kubeflow-notebooks-controller-status-transitions`](../../.agents/skills/kubeflow-notebooks-controller-status-transitions/SKILL.md) |
+| Updating status condition/state transitions    | [`kubeflow-notebooks-controller-status-transitions`](../../.agents/skills/kubeflow-notebooks-controller-status-transitions/SKILL.md) | [`kubeflow-notebooks-controller-reconcile-pattern`](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md) |
+| Editing webhook validation/defaulting          | [`kubeflow-notebooks-controller-webhook-validation`](../../.agents/skills/kubeflow-notebooks-controller-webhook-validation/SKILL.md) | [`kubeflow-notebooks-controller-crd-evolution`](../../.agents/skills/kubeflow-notebooks-controller-crd-evolution/SKILL.md) |
+| Adjusting RBAC markers/finalizer lifecycle     | [`kubeflow-notebooks-controller-rbac-and-finalizers`](../../.agents/skills/kubeflow-notebooks-controller-rbac-and-finalizers/SKILL.md) | [`kubeflow-notebooks-controller-reconcile-pattern`](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md) |
+
+Fallback:
+
+- If no row clearly matches, use [`kubeflow-notebooks-global-guardrails`](../../.agents/skills/kubeflow-notebooks-global-guardrails/SKILL.md) and ask for clarification.
+
+---
+
 ## Generated Code
 
 **Never manually modify:**
@@ -242,7 +277,7 @@ make deploy
 - Do not bypass RBAC or implement custom authorization
 - Respect namespace boundaries and user permissions
 
-> **See [RBAC Markers and Permissions](./AGENTS-PATTERNS.md#rbac-markers-and-permissions)** for kubebuilder marker patterns.
+> **See [Controller RBAC and Finalizers Skill](../../.agents/skills/kubeflow-notebooks-controller-rbac-and-finalizers/SKILL.md)** for marker and permission workflow.
 
 ### Consistency & Conventions
 
@@ -260,41 +295,28 @@ make deploy
 
 ## Common Controller Pitfalls Summary
 
-| Category           | Key Rule                                                      | See Patterns                                                                      |
-| ------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **Reconciliation** | Requeue on transient failures, don't assume order             | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#controller-reconciliation-patterns)     |
-| **NotFound**       | Use `client.IgnoreNotFound()`, don't fail on deleted          | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#controller-reconciliation-patterns)     |
-| **DeepCopy**       | Always `DeepCopy()` before modifying cached objects           | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#go-specific-patterns-for-controllers)   |
-| **Status**         | Use `Status().Update()` separately from spec updates          | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#status-management-patterns)             |
-| **Status Compare** | Only update if changed via `equality.Semantic.DeepEqual`      | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#status-management-patterns)             |
-| **Webhooks**       | Keep fast, no blocking operations                             | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#webhook-patterns)                       |
-| **Validation**     | Return `apierrors.NewInvalid()`, never fail silently          | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#webhook-patterns)                       |
-| **Owner Refs**     | Always pass Scheme, same namespace only                       | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#owner-reference-and-finalizer-patterns) |
-| **Finalizers**     | Check `DeletionTimestamp` before adding, remove after cleanup | [AGENTS-PATTERNS.md](./AGENTS-PATTERNS.md#owner-reference-and-finalizer-patterns) |
+| Category           | Key Rule                                                      | See Skill                                                                                       |
+| ------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Reconciliation** | Requeue on transient failures; do not assume order            | [`kubeflow-notebooks-controller-reconcile-pattern`](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md) |
+| **NotFound**       | Use `client.IgnoreNotFound()`; do not fail on deleted objects | [`kubeflow-notebooks-controller-reconcile-pattern`](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md) |
+| **DeepCopy**       | Call `DeepCopy()` before modifying cached objects             | [`kubeflow-notebooks-controller-reconcile-pattern`](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md) |
+| **Status**         | Use `Status().Update()` separately from spec updates          | [`kubeflow-notebooks-controller-status-transitions`](../../.agents/skills/kubeflow-notebooks-controller-status-transitions/SKILL.md) |
+| **Status Compare** | Update status only when changed via `equality.Semantic.DeepEqual` | [`kubeflow-notebooks-controller-status-transitions`](../../.agents/skills/kubeflow-notebooks-controller-status-transitions/SKILL.md) |
+| **Webhooks**       | Keep webhooks fast; avoid blocking operations                 | [`kubeflow-notebooks-controller-webhook-validation`](../../.agents/skills/kubeflow-notebooks-controller-webhook-validation/SKILL.md) |
+| **Validation**     | Return `apierrors.NewInvalid()`; do not fail silently         | [`kubeflow-notebooks-controller-webhook-validation`](../../.agents/skills/kubeflow-notebooks-controller-webhook-validation/SKILL.md) |
+| **Owner Refs**     | Pass `Scheme` and keep owner refs in the same namespace       | [`kubeflow-notebooks-controller-rbac-and-finalizers`](../../.agents/skills/kubeflow-notebooks-controller-rbac-and-finalizers/SKILL.md) |
+| **Finalizers**     | Check `DeletionTimestamp` before adding, remove after cleanup | [`kubeflow-notebooks-controller-rbac-and-finalizers`](../../.agents/skills/kubeflow-notebooks-controller-rbac-and-finalizers/SKILL.md) |
 
 ---
 
 ## Common Tasks
 
-### Adding a New CRD Field
+Use the skill playbooks above for task execution, especially:
 
-1. Modify types in `api/v1beta1/*_types.go`
-2. Add validation markers as needed
-3. Run `make generate` - DeepCopy methods
-4. Run `make manifests` - CRD YAML
-5. Update controller logic if field affects reconciliation
-6. Update webhook validation if field needs validation
-7. Add tests for new field
-8. Update samples in `manifests/kustomize/samples/`
-
-### Adding a New Controller
-
-1. Scaffold with kubebuilder (if new CRD)
-2. Implement reconciliation in `internal/controller/`
-3. Add tests in `*_controller_test.go`
-4. Register in `cmd/main.go`
-5. Update RBAC markers
-6. Run `make manifests`
+- CRD/schema evolution: `kubeflow-notebooks-controller-crd-evolution`
+- Reconcile implementation: `kubeflow-notebooks-controller-reconcile-pattern`
+- Status logic: `kubeflow-notebooks-controller-status-transitions`
+- Webhook + RBAC/finalizers: `kubeflow-notebooks-controller-webhook-validation` and `kubeflow-notebooks-controller-rbac-and-finalizers`
 
 ---
 
@@ -327,8 +349,17 @@ The following are handled by other modules and **MUST NOT** be modified in contr
 
 - Backend API handlers and business logic (belongs to [backend module](../backend/AGENTS.md))
 - Frontend UI components and presentation logic (belongs to [frontend module](../frontend/AGENTS.md))
-- OpenAPI specifications (belongs to [backend module](../backend/AGENTS.md#swagger--openapi-patterns))
+- OpenAPI specifications (belongs to [backend module](../backend/AGENTS.md))
 - Data access patterns for external APIs (belongs to [backend module](../backend/AGENTS.md#repository-patterns))
+
+---
+
+## Response Contract
+
+- Follow global response contract in [`../../AGENTS.md`](../../AGENTS.md#response-contract).
+- Final response must end with `Files Used` list relevant to this task.
+- `Files Used` must include controller-relevant `AGENTS.md` and any `SKILL.md` files applied.
+- Do not list source files in `Files Used` unless explicitly requested by the user.
 
 ---
 
@@ -360,7 +391,7 @@ The following are handled by other modules and **MUST NOT** be modified in contr
 
 ### Reconciler Pattern Template
 
-> **See [AGENTS-PATTERNS.md - Reconciler Pattern Template](./AGENTS-PATTERNS.md#reconciler-pattern-template)** for the full template.
+> **See [Controller Reconcile Pattern Skill](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md)** for the current reconcile template workflow.
 
 ### Pre-Task Checklist
 
