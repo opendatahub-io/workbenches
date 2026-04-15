@@ -20,21 +20,67 @@ These rules apply everywhere and cannot be overridden by local policies.
 
 ---
 
-## STOP — Skill Routing Required Before Any Code Changes
+## STOP — Agent Workflow Required Before Any Code Changes
 
-**Do NOT write or modify any code until you complete these steps:**
+**Do NOT write or modify any code until you complete all phases below.**
 
-1. Identify the primary module (`backend`, `controller`, `frontend`, `cypress`) from the task.
-2. Read that module's `AGENTS.md` and its `Skill Playbooks` section.
-3. **Always include `kubeflow-notebooks-global-guardrails`** — it applies to every coding task (preflight, verification, escalation).
-4. From the module's Skill Selection Matrix, select **every additional skill that applies** to the task. A feature that touches components, state, and requires Cypress tests needs all those skills. Do not artificially limit yourself.
-5. **Frontend tasks — Cypress gate:** If the task is in the `frontend` module and changes user-visible behavior (new routes, form changes, table actions, navigation, modals, CRUD workflows), you **MUST** also:
+This workflow ensures agents gather context, plan carefully, and get human confirmation before implementing changes. Each phase has a required output that makes the agent's reasoning visible and auditable.
+
+### Complexity Check
+
+Before starting, assess task complexity:
+
+- **Standard tasks** (multi-file changes, new behavior, refactors): Complete all phases with full outputs.
+- **Trivial tasks** (single-file fix with obvious scope, typo correction): Phases 1–3 may be condensed into a single combined output, but all phases must still be evaluated. The checkpoint (Phase 4) is still required.
+
+---
+
+### Phase 1: Context Gathering
+
+**Goal:** Build a complete understanding of what is being asked and why.
+
+1. **Resolve the ticket/issue.** If the task references a Jira ticket, GitHub issue, or PR:
+   - Fetch the ticket and read it fully (description, acceptance criteria, comments).
+   - Follow linked resources (design docs, related issues, referenced PRs).
+   - Extract acceptance criteria — these become the source of truth for "done."
+2. **If no ticket exists**, ask the user to provide:
+   - Expected behavior or outcome.
+   - Acceptance criteria (what "done" looks like).
+   - Any constraints or non-obvious requirements.
+3. **Identify the primary module(s)** (`backend`, `controller`, `frontend`, `cypress`) from the task.
+
+**Output — Context Summary:**
+
+```text
+Context Summary
+- Source: <ticket URL or "user-provided">
+- Module(s): <module list>
+- Acceptance criteria:
+  1. <criterion>
+  2. <criterion>
+- Constraints: <any constraints, deadlines, or dependencies>
+- Open questions: <anything unclear — ask these before proceeding>
+```
+
+If there are open questions, **STOP and ask the user** before moving to Phase 2.
+
+---
+
+### Phase 2: Skill Routing
+
+**Goal:** Identify all skills needed and prove each was read.
+
+1. Read the module's `AGENTS.md` and its `Skill Playbooks` section.
+2. **Always include `kubeflow-notebooks-global-guardrails`** — it applies to every coding task (preflight, verification, escalation).
+3. From the module's Skill Selection Matrix, select **every additional skill that applies** to the task. A feature that touches components, state, and requires Cypress tests needs all those skills. Do not artificially limit yourself.
+4. **Frontend tasks — Cypress gate:** If the task is in the `frontend` module and changes user-visible behavior (new routes, form changes, table actions, navigation, modals, CRUD workflows), you **MUST** also:
    - Read the [Cypress AGENTS.md](workspaces/frontend/src/__tests__/cypress/AGENTS.md).
    - Add the relevant Cypress skill (typically `kubeflow-notebooks-cypress-e2e-authoring`) to your selected skills.
    - This is mandatory, not optional. See [Cypress Coverage Gate](workspaces/frontend/AGENTS.md#cypress-coverage-gate) for the full decision rules.
-6. **Read the full `SKILL.md` file** for each selected skill (including guardrails). Declaring a skill without reading it is a protocol violation.
-7. If no task-specific match exists beyond guardrails, ask for clarification instead of guessing.
-8. Publish the routing declaration below.
+5. **Read the full `SKILL.md` file** for each selected skill (including guardrails). Declaring a skill without reading it is a protocol violation.
+6. If no task-specific match exists beyond guardrails, ask for clarification instead of guessing.
+
+**Output — Skill Plan:**
 
 ```text
 Skill Plan
@@ -52,8 +98,82 @@ See [Skill Routing Protocol](#skill-routing-protocol) for selection priorities a
 
 ---
 
+### Phase 3: Work Planning
+
+**Goal:** Explore the codebase and draft a concrete implementation plan.
+
+1. **Explore relevant code**: Read existing patterns, identify files to change, understand current behavior.
+2. **Check for approval-bound changes**: Does this task touch API contracts, CRDs, schemas, security logic, or dependencies? If yes, flag it — human approval is required before implementation.
+3. **Draft the work plan**: List specific files to modify, new files to create, tests to add, and verification steps.
+4. **Identify risks**: What could break? Are there edge cases? Cross-module impacts?
+
+**Output — Work Plan:**
+
+```text
+Work Plan
+- Summary: <one-line description of the approach>
+- Approval required: yes/no (if yes, list what needs approval)
+- Files to modify:
+  - <path>: <what changes>
+  - <path>: <what changes>
+- Files to create:
+  - <path>: <purpose>
+- Tests:
+  - <test type>: <what is being tested>
+- Verification commands:
+  - <command>
+- Risks:
+  - <risk description>
+```
+
+---
+
+### Phase 4: Checkpoint — STOP and Confirm
+
+**Goal:** Get human confirmation before writing any code.
+
+Publish the combined outputs from Phases 1–3 (Context Summary, Skill Plan, Work Plan) in a single message. Then **STOP and wait for user confirmation.**
+
+**Do NOT proceed to implementation until the user explicitly confirms the plan.**
+
+The user may:
+
+- **Confirm** the plan as-is → proceed to Phase 5.
+- **Adjust** the plan → update the relevant outputs and re-confirm.
+- **Ask questions** → answer them, then re-confirm.
+- **Reject** the plan → return to the relevant phase and revise.
+
+---
+
+### Phase 5: Implementation
+
+**Goal:** Execute the confirmed plan, verify results, report outcomes.
+
+1. Implement changes following the confirmed Work Plan.
+2. Follow each selected skill's workflow steps.
+3. Run verification commands from the guardrails skill.
+4. Ensure all acceptance criteria from Phase 1 are met.
+
+**Output — Implementation Report:**
+
+The final response **MUST** include:
+
+- Summary of changes made.
+- Verification results (commands run and outcomes).
+- Acceptance criteria checklist (each criterion marked as met or not met).
+- Cypress Gate section (if frontend — see [Testing Requirements](#testing-requirements)).
+- Files Used section (see [Response Contract](#response-contract)).
+
+---
+
 ## Table of Contents
 
+- [Agent Workflow](#stop--agent-workflow-required-before-any-code-changes)
+  - [Phase 1: Context Gathering](#phase-1-context-gathering)
+  - [Phase 2: Skill Routing](#phase-2-skill-routing)
+  - [Phase 3: Work Planning](#phase-3-work-planning)
+  - [Phase 4: Checkpoint](#phase-4-checkpoint--stop-and-confirm)
+  - [Phase 5: Implementation](#phase-5-implementation)
 - [Scope](#scope)
 - [Precedence](#precedence)
 - [Skill Routing Protocol](#skill-routing-protocol)
@@ -119,7 +239,7 @@ When this document or any `AGENTS.md` file links to another `AGENTS.md` file or 
 
 ## Skill Routing Protocol
 
-The mandatory steps and routing declaration are defined at the top of this file in [STOP — Skill Routing Required Before Any Code Changes](#stop--skill-routing-required-before-any-code-changes). Complete that gate before writing any code.
+Skill routing is [Phase 2](#phase-2-skill-routing) of the [Agent Workflow](#stop--agent-workflow-required-before-any-code-changes). Complete the full workflow — not just skill routing — before writing any code.
 
 Selection guidance:
 
