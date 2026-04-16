@@ -33,3 +33,17 @@ metadata:
 
 - Generated artifacts and tests align with schema changes.
 - Status/reconcile behavior matches new field semantics.
+
+## Verification
+
+From `workspaces/controller/` run:
+
+1. `make generate && make manifests`
+2. `make lint`
+3. `ginkgo run -v ./...`
+
+Pass criteria:
+
+- Generated CRD and DeepCopy artifacts are current.
+- Tests cover valid, invalid, and defaulted field behavior.
+- No lint failures.

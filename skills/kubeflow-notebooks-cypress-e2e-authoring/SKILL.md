@@ -26,7 +26,7 @@ metadata:
 - Keep tests independent and deterministic.
 - Minimize hard waits; prefer condition-based waits.
 
-## Coverage Targets
+## Done Criteria
 
 - Happy path flow.
 - Validation/error path.

@@ -26,7 +26,7 @@ metadata:
 - Preserve backward compatibility unless change is explicitly approved.
 - Avoid duplicating controller business logic in webhook code.
 
-## Test Expectations
+## Done Criteria
 
 - Valid input accepted.
 - Invalid variants rejected with clear reasons.

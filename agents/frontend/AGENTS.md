@@ -20,10 +20,13 @@ This file extends the global [AGENTS.md](../../AGENTS.md) with frontend-specific
 ## Quick Commands
 
 ```bash
+# Install dependencies
+npm ci
+
 # Start development server
 npm run start:dev
 
-# Run unit tests
+# Run all tests (lint + type-check + unit + cypress)
 npm test
 
 # Run unit tests in watch mode
@@ -37,6 +40,9 @@ npm run generate:api
 
 # Lint code
 npm run test:lint
+
+# Lint with auto-fix
+npm run test:lint:fix
 
 # Type check
 npm run test:type-check
@@ -53,10 +59,8 @@ npm run build
 - [Skill Playbooks](#skill-playbooks)
 - [Skill Selection Matrix](#skill-selection-matrix)
 - [Generated Code](#generated-code)
-- [Development Commands](#development-commands)
 - [Code Conventions](#code-conventions)
 - [Common Pitfalls Summary](#common-pitfalls-summary)
-- [Common Tasks](#common-tasks)
 - [Cypress Coverage Gate](#cypress-coverage-gate)
 - [Troubleshooting](#troubleshooting)
 - [Out of Scope](#out-of-scope)
@@ -103,13 +107,7 @@ Agents **MUST NOT**:
 
 ### Node.js Version
 
-The frontend requires Node.js v20.0.0 or later. This is enforced via `package.json` engines field.
-
-```bash
-node --version  # Should output v20.x.x or higher
-nvm install 20
-nvm use 20
-```
+Node.js v20.0.0 or later is required (enforced via `package.json` engines field). Use `nvm use 20` if needed.
 
 ---
 
@@ -207,25 +205,6 @@ To regenerate the OpenAPI client:
 
 ---
 
-## Development Commands
-
-See [Quick Commands](#quick-commands) at the top of this file for common commands.
-
-**Additional options:**
-
-```bash
-# Install dependencies
-npm ci
-
-# Run linter with auto-fix
-npm run test:lint:fix
-
-# Run all tests (lint + type-check + unit + cypress)
-npm run test
-```
-
----
-
 ## Code Conventions
 
 - Follow existing TypeScript patterns in the codebase
@@ -275,18 +254,6 @@ npm run test
 | **Data Fetch**  | Use `useFetchState` for async loading; avoid manual state wiring | [`kubeflow-notebooks-frontend-api-integration`](../../.agents/skills/kubeflow-notebooks-frontend-api-integration/SKILL.md) |
 | **Complexity**  | Refactor functions longer than 30-40 lines or with mixed concerns | [`kubeflow-notebooks-frontend-hook-and-useeffect-refactor`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md) |
 | **DRY**         | Extract duplicated code blocks into helper functions          | [`kubeflow-notebooks-frontend-hook-and-useeffect-refactor`](../../.agents/skills/kubeflow-notebooks-frontend-hook-and-useeffect-refactor/SKILL.md) |
-
----
-
-## Common Tasks
-
-Use the skill playbooks above for task execution, especially:
-
-- Component/page work: `kubeflow-notebooks-frontend-component-authoring`
-- API workflows: `kubeflow-notebooks-frontend-api-integration`
-- Hook/effect refactors: `kubeflow-notebooks-frontend-hook-and-useeffect-refactor`
-- Unit/integration tests: `kubeflow-notebooks-frontend-jest-rtl-testing`
-- Browser workflow coverage: `kubeflow-notebooks-cypress-e2e-authoring`
 
 ---
 
@@ -365,10 +332,7 @@ The following are handled by other modules and **MUST NOT** be modified in front
 
 ## Response Contract
 
-- Follow global response contract in [`../../AGENTS.md`](../../AGENTS.md#response-contract).
-- Final response must end with `Files Used` list relevant to this task.
-- `Files Used` must include frontend-relevant `AGENTS.md` and any `SKILL.md` files applied.
-- Do not list source files in `Files Used` unless explicitly requested by the user.
+Follow the [global response contract](../../AGENTS.md#response-contract).
 
 ---
 
@@ -405,13 +369,3 @@ The following are handled by other modules and **MUST NOT** be modified in front
 ### Component Pattern Template
 
 > **See [Frontend Component Authoring Skill](../../.agents/skills/kubeflow-notebooks-frontend-component-authoring/SKILL.md)** for the current component template workflow.
-
-### Pre-Task Checklist
-
-- [ ] Check if API changes are needed (requires separate PR)
-- [ ] Update `swagger.version` if API changed
-- [ ] Run `npm run generate:api` after API updates
-- [ ] Follow existing component patterns
-- [ ] Add `data-testid` attributes for Cypress
-- [ ] Handle loading, error, and empty states
-- [ ] Add/update unit tests

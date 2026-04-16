@@ -32,3 +32,16 @@ metadata:
 
 - Component is strongly typed, testable, and pattern-consistent.
 - UI behavior is covered by unit/integration tests where needed.
+
+## Verification
+
+From `workspaces/frontend/` run:
+
+1. `npm run test:type-check`
+2. `npm run test:lint`
+3. `npm test -- --testPathPattern="<component-name>"`
+
+Pass criteria:
+
+- No TypeScript or lint errors.
+- Component tests cover rendering, interaction, and error states.

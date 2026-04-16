@@ -30,7 +30,7 @@ metadata:
 - Isolate or reset shared test state.
 - Use robust selectors and deterministic fixtures.
 
-## Exit Criteria
+## Done Criteria
 
 - Repeated local runs are stable.
 - CI-specific assumptions are documented and validated.

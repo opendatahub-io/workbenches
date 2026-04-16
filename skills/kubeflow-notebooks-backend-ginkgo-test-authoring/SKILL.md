@@ -33,3 +33,15 @@ metadata:
 - Tests are deterministic and readable.
 - Setup/cleanup is explicit.
 - New behavior is covered with success and failure cases.
+
+## Verification
+
+From `workspaces/backend/` run:
+
+1. `make lint`
+2. `ginkgo run -v ./...`
+
+Pass criteria:
+
+- All new and existing tests pass.
+- No lint failures.

@@ -22,16 +22,16 @@ metadata:
 3. Add finalizer before creating external dependencies that need cleanup.
 4. On deletion, run cleanup then remove finalizer.
 
-## Safety Checks
+## Guardrails
 
 - No orphan resources after deletion.
 - No permission overreach in RBAC markers.
 - Cleanup is retry-safe and idempotent.
 
-## Tests
+## Done Criteria
 
-- Finalizer add/remove lifecycle.
-- Cleanup behavior on retry/error.
+- Finalizer add/remove lifecycle is tested.
+- Cleanup behavior on retry/error is tested.
 - Permission-dependent paths fail predictably when unauthorized.
 
 ## Verification

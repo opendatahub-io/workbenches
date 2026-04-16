@@ -27,7 +27,7 @@ metadata:
 - Avoid side effects before prerequisite validation.
 - Keep reconcile operations safe for repeated execution.
 
-## Testing Focus
+## Done Criteria
 
 - Idempotency across repeated reconciles.
 - Expected status condition transitions.

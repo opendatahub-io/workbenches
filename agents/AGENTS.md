@@ -18,6 +18,39 @@ You are an expert software engineer for the Kubeflow Notebooks project.
 This document defines global rules for automated agents operating in this repository.
 These rules apply everywhere and cannot be overridden by local policies.
 
+## Rule Severity
+
+This document uses RFC 2119 keywords to indicate requirement levels:
+
+- **MUST / MUST NOT**: Absolute requirements. Violations are blocking.
+- **SHOULD / SHOULD NOT**: Strong recommendations. Exceptions require justification.
+- **MAY**: Optional guidance. Use judgment.
+
+## Table of Contents
+
+- [Agent Workflow](#stop--agent-workflow-required-before-any-code-changes)
+  - [Phase 1: Context Gathering](#phase-1-context-gathering)
+  - [Phase 2: Skill Routing](#phase-2-skill-routing)
+  - [Phase 3: Work Planning](#phase-3-work-planning)
+  - [Phase 4: Checkpoint](#phase-4-checkpoint--stop-and-confirm)
+  - [Phase 5: Implementation](#phase-5-implementation)
+  - [Phase 6: PR Description Offer](#phase-6-pr-description-offer)
+- [Scope](#scope)
+- [Precedence](#precedence)
+- [Agent Behavior](#agent-behavior)
+- [Repository Structure](#repository-structure)
+- [Technology Stack](#technology-stack)
+- [Safety & Security](#safety--security)
+- [Change Boundaries](#change-boundaries)
+- [Agent Permissions](#agent-permissions)
+- [Quality Expectations](#quality-expectations)
+- [Testing Requirements](#testing-requirements)
+- [Code Organization](#code-organization)
+- [Cross-Module Constraints](#cross-module-constraints)
+- [Coding Standards](#coding-standards)
+- [Response Contract](#response-contract)
+- [Quick Reference](#quick-reference)
+
 ---
 
 ## STOP — Agent Workflow Required Before Any Code Changes
@@ -39,11 +72,12 @@ Before starting, assess task complexity:
 
 **Goal:** Build a complete understanding of what is being asked and why.
 
-1. **Resolve the ticket/issue.** If the task references a Jira ticket, GitHub issue, or PR:
-   - Fetch the ticket and read it fully (description, acceptance criteria, comments).
-   - Follow linked resources (design docs, related issues, referenced PRs).
-   - Extract acceptance criteria — these become the source of truth for "done."
-2. **If no ticket exists**, ask the user to provide:
+1. **Always ask for a ticket.** Before doing anything else, ask the user:
+   > Is there a Jira ticket, GitHub issue, or PR link for this task?
+   - If the user provides one: fetch it, read it fully (description, acceptance criteria, comments), follow linked resources (design docs, related issues, referenced PRs). The ticket's acceptance criteria become the source of truth for "done."
+   - If the user says there is no ticket: proceed to step 2.
+   - **Do not skip this step**, even if the user's message seems self-contained.
+2. **If no ticket exists**, ask the user to confirm or provide:
    - Expected behavior or outcome.
    - Acceptance criteria (what "done" looks like).
    - Any constraints or non-obvious requirements.
@@ -80,6 +114,12 @@ If there are open questions, **STOP and ask the user** before moving to Phase 2.
 5. **Read the full `SKILL.md` file** for each selected skill (including guardrails). Declaring a skill without reading it is a protocol violation.
 6. If no task-specific match exists beyond guardrails, ask for clarification instead of guessing.
 
+**Selection guidance:**
+
+- Select every skill whose concern is touched by the task.
+- Do not load two skills that cover the same concern (e.g., two testing skills for the same test type).
+- Prefer specific task skills over broad governance guidance.
+
 **Output — Skill Plan:**
 
 ```text
@@ -93,8 +133,6 @@ Skill Plan
 ```
 
 The `Key instruction` entries prove each skill was actually read. If any cannot be filled, routing is incomplete. **Do not proceed.**
-
-See [Skill Routing Protocol](#skill-routing-protocol) for selection priorities and additional details.
 
 ---
 
@@ -156,54 +194,63 @@ The user may:
 
 **Output — Implementation Report:**
 
-The final response **MUST** include:
+The final response **MUST** include all sections below. Use this structure:
 
-- Summary of changes made.
-- Verification results (commands run and outcomes).
-- Acceptance criteria checklist (each criterion marked as met or not met).
-- Cypress Gate section (if frontend — see [Testing Requirements](#testing-requirements)).
-- Files Used section (see [Response Contract](#response-contract)).
+```text
+Implementation Report
+
+Module decision
+- Module(s) touched: <module list>
+- Rationale: <why these modules — e.g., "frontend only: the feature is a UI
+  action with no new API endpoints; backend contract is unchanged">
+- Modules explicitly NOT touched and why: <e.g., "backend: no new endpoint
+  needed, reusing existing GET /workspaces/{name}">
+
+Skills applied
+- <skill-id>: <how it was used — e.g., "followed component authoring
+  checklist for WorkspaceDuplicateButton">
+- <skill-id>: <how it was used>
+
+Summary of changes
+- <file path>: <what changed and why>
+- <file path>: <what changed and why>
+
+Verification results
+| Command                | Result       |
+| ---------------------- | ------------ |
+| <command>              | Pass / Fail  |
+
+Acceptance criteria
+- [x] <criterion from Phase 1>
+- [x] <criterion from Phase 1>
+- [ ] <any unmet criterion — explain why>
+
+Cypress Gate  (if frontend — see Testing Requirements)
+- Triggers matched: <list>
+- Tests added/updated: <count and file paths>
+```
+
+Followed by the `Files Used` section (see [Response Contract](#response-contract)).
 
 ---
 
-## Table of Contents
+### Phase 6: PR Description Offer
 
-- [Agent Workflow](#stop--agent-workflow-required-before-any-code-changes)
-  - [Phase 1: Context Gathering](#phase-1-context-gathering)
-  - [Phase 2: Skill Routing](#phase-2-skill-routing)
-  - [Phase 3: Work Planning](#phase-3-work-planning)
-  - [Phase 4: Checkpoint](#phase-4-checkpoint--stop-and-confirm)
-  - [Phase 5: Implementation](#phase-5-implementation)
-- [Scope](#scope)
-- [Precedence](#precedence)
-- [Skill Routing Protocol](#skill-routing-protocol)
-- [Agent Behavior](#agent-behavior)
-- [Repository Structure](#repository-structure)
-- [Technology Stack](#technology-stack)
-- [Safety & Security](#safety--security)
-- [Change Boundaries](#change-boundaries)
-- [Agent Permissions](#agent-permissions)
-- [Quality Expectations](#quality-expectations)
-- [Testing Requirements](#testing-requirements)
-- [Code Organization](#code-organization)
-- [Cross-Module Constraints](#cross-module-constraints)
-- [Critical Components](#critical-components)
-- [Error Handling](#error-handling)
-- [Logging](#logging)
-- [Performance Considerations](#performance-considerations)
-- [Kubernetes Best Practices](#kubernetes-best-practices)
-- [Common Coding Pitfalls](#common-coding-pitfalls)
-- [Module-Specific Guidelines](#module-specific-guidelines)
-- [Response Contract](#response-contract)
-- [Quick Reference](#quick-reference)
+**Goal:** Help the user ship the work quickly.
 
-## Rule Severity
+After the Implementation Report, ask:
 
-This document uses RFC 2119 keywords to indicate requirement levels:
+> Would you like me to generate a pull request description in Markdown you can copy-paste?
 
-- **MUST / MUST NOT**: Absolute requirements. Violations are blocking.
-- **SHOULD / SHOULD NOT**: Strong recommendations. Exceptions require justification.
-- **MAY**: Optional guidance. Use judgment.
+If the user accepts, produce a ready-to-paste Markdown block with:
+
+- **Title** — concise, conventional-commit style (e.g., `feat: add Duplicate action for Workspaces`).
+- **Summary** — 2–4 sentences describing what changed and why.
+- **Changes** — bulleted list of the key changes grouped by concern (not an exhaustive file list).
+- **Testing** — what was tested (unit, e2e, type-check, lint) and results.
+- **Linked issues** — ticket/issue URLs from Phase 1 (if any), formatted as `Resolves #123` or `Related: <URL>`.
+
+Keep it concise and reviewer-friendly. Do not include internal details like skill names, AGENTS.md references, or the module decision rationale — those are for the agent's own report, not for human reviewers.
 
 ---
 
@@ -231,71 +278,22 @@ Agents **MUST NOT**:
 3. Local files may never weaken global rules
 4. When rules conflict, the stricter interpretation applies
 
-### Following Links
-
-When this document or any `AGENTS.md` file links to another `AGENTS.md` file or skill playbook, agents **MUST** read the linked file before proceeding with the task. Do not assume the content; always fetch and read it.
-
----
-
-## Skill Routing Protocol
-
-Skill routing is [Phase 2](#phase-2-skill-routing) of the [Agent Workflow](#stop--agent-workflow-required-before-any-code-changes). Complete the full workflow — not just skill routing — before writing any code.
-
-Selection guidance:
-
-- Select every skill whose concern is touched by the task. Do not artificially limit the count.
-- Do not load two skills that cover the same concern (e.g., two testing skills for the same test type).
-- Prefer specific task skills over broad governance guidance.
-- Keep policy interpretation in `AGENTS.md`; keep execution details in `SKILL.md`.
-
 ---
 
 ## Agent Behavior
 
-### Stability
-
-These rules are intended to be stable and **MUST** be followed strictly.
-Agents **MUST NOT** reinterpret or weaken constraints defined here.
-
-### Interpretation
+### Principles
 
 - Treat rules as constraints, not suggestions
-- Do not infer intent beyond what is written
-- Prefer explicit rules over assumed patterns
-- When unsure, choose the least risky action
-
-### Change Philosophy
-
-- Prefer minimal, localized changes
-- Avoid speculative refactors or stylistic rewrites
-- Extend existing patterns instead of introducing new ones
-
-### Decision Boundaries
-
-Agents may implement solutions within existing architecture.
-Agents **MUST NOT** redefine responsibilities between frontend, backend, or controller layers.
-See [Module Boundaries](#module-boundaries) for detailed separation of concerns.
-
-### Risk Model
-
-When multiple solutions are possible:
-
-- Prefer predictable and reversible approaches
-- Avoid new dependencies or architectural shifts
-- Default to safe no-op behavior over uncertain changes
-
-### Reasoning Expectations
-
-- State assumptions explicitly when necessary
-- Do not invent missing requirements
-- Ask for clarification rather than guessing architectural intent
+- Prefer minimal, localized changes — extend existing patterns instead of introducing new ones
+- Prefer predictable and reversible approaches over architectural shifts
+- Do not infer intent beyond what is written; do not invent missing requirements
+- State assumptions explicitly; when unsure, choose the least risky action
+- **MUST NOT** redefine responsibilities between frontend, backend, or controller layers
 
 ### When Stuck
 
-If uncertain about the correct approach:
-
 - **Ask a clarifying question** — don't guess intent
-- **Propose a short plan** — outline steps before implementing
 - **Start small** — make minimal changes, verify, then continue
 - **MUST NOT** push large speculative changes without confirmation
 - **MUST NOT** refactor unrelated code while fixing a bug
@@ -366,24 +364,13 @@ Refer to module-specific AGENTS.md files for detailed tooling and version requir
 
 - **MUST** validate all inputs at system boundaries (API endpoints, webhooks)
 - **MUST** sanitize user inputs to prevent injection attacks
-- **MUST** use parameterized queries for any database operations
 - **SHOULD** escape output when rendering user-provided content
 
 ### Access Control
 
 - **MUST NOT** bypass Kubernetes role-based access control
 - **MUST** validate permissions before operations
-- **SHOULD** audit sensitive operations (log who did what, when)
 - **SHOULD** follow principle of least privilege
-
-### Dependencies
-
-- **SHOULD** keep dependencies updated for security patches
-- **SHOULD** review new dependencies for known vulnerabilities
-- **SHOULD** use trusted sources for third-party libraries
-- **SHOULD** scan for vulnerabilities using tools in CI
-
-**See also:** [Change Boundaries](#change-boundaries), [Quality Expectations](#quality-expectations)
 
 ---
 
@@ -391,14 +378,13 @@ Refer to module-specific AGENTS.md files for detailed tooling and version requir
 
 Human approval **MUST** be obtained for:
 
-- Public API changes
+- Public API changes, CRD schema changes, or OpenAPI specification changes
+- Webhook logic changes (security and admission control critical)
 - Database schema or migration changes
 - Security-sensitive logic
+- Kustomize base manifests (changes propagate to all overlays)
+- Adding new dependencies (Go modules, npm packages) or major version upgrades
 - Licensing or dependency policy changes
-- Adding new dependencies (Go modules, npm packages)
-- Major version upgrades of existing dependencies
-
-**See also:** [Safety & Security](#safety--security), [Critical Components](#critical-components)
 
 ---
 
@@ -408,8 +394,7 @@ Human approval **MUST** be obtained for:
 
 Agents **MAY** perform these operations freely:
 
-- Read and list files
-- Search codebase (grep, find)
+- Read and list files, search codebase
 - Run linters (`make lint`, `npm run test:lint`)
 - Run type checks (`npm run test:type-check`)
 - Run single unit tests (`go test -run TestName`, `npm run test:unit -- --testPathPattern`)
@@ -453,69 +438,11 @@ Agents **MUST** ask before:
 
 Format: `// TODO(#<issue-number>): Description` or `// FIXME(#<issue-number>): Description`
 
-Examples:
-
-- `// TODO(#1234): Implement proper error handling for edge case`
-- `// FIXME(#5678): Temporary workaround until upstream fix is available`
-- `// Skip test until backend API is fixed (#789)`
-
-**Without ticket reference:**
-
-- ❌ `// TODO: fix this later` — No tracking
-- ❌ Test skip without reference — No context
-
-**Best practices:**
-
-- ✅ **DO**: Remove unused code entirely (preserved in git history)
-- ✅ **DO**: Fix TODOs before completing changes
-- ✅ **DO**: Fix failing tests instead of skipping them
-- ❌ **DON'T**: Leave commented code "just in case"
-- ❌ **DON'T**: Skip tests without a ticket reference
-
 ### Code Comments
 
-Code **SHOULD** be self-documenting through clear naming, structure, and intent.
+Code **SHOULD** be self-documenting. Add comments only to explain **why** (not what): non-obvious business logic, workarounds, constraints, public API contracts, or gotchas. Do not restate what the code does.
 
-**SHOULD** add comments only when:
-
-- Explaining **why** (not what) — non-obvious business logic, workarounds, or constraints
-- Documenting public APIs — function signatures, exported types, interfaces
-- Warning about gotchas — edge cases, performance implications, security considerations
-- Referencing external resources — links to specs, RFCs, or related issues
-
-**SHOULD NOT** add comments that:
-
-- Restate the obvious — `// increment counter` before `counter++`
-- Describe what the code does — the code itself shows this
-- Become stale — outdated comments are worse than no comments
-
-**Examples:**
-
-```go
-// ✅ Good: explains WHY
-// Use exponential backoff to avoid overwhelming the API during outages
-retryWithBackoff(ctx, func() error { ... })
-
-// ❌ Bad: restates the obvious
-// Create a new workspace
-workspace := NewWorkspace(name, namespace)
-```
-
-```typescript
-// ✅ Good: documents public API
-/** Fetches workspaces for the current user. Returns empty array if none exist. */
-export function useWorkspaces(): Workspace[] { ... }
-
-// ❌ Bad: describes what code does
-// Loop through items and filter
-const filtered = items.filter(item => item.active);
-```
-
-### PR Checklist
-
-Before submitting a pull request, verify:
-
-**Commit message format:**
+### Commit Message Format
 
 ```
 feat(scope): short description
@@ -525,21 +452,7 @@ test(scope): short description
 refactor(scope): short description
 ```
 
-**Pre-commit verification:**
-
-- [ ] Commit is signed off (`git commit -s`)
-- [ ] Lint passes (`make lint` or `npm run test:lint`)
-- [ ] Type check passes (frontend: `npm run test:type-check`)
-- [ ] Unit tests pass (`make test` or `npm test`)
-- [ ] Diff is small and focused on a single concern
-- [ ] No excessive console logs or debug statements
-- [ ] No commented-out code or untracked TODOs
-
-**PR description SHOULD include:**
-
-- Brief summary of what changed and why
-- Link to related issue (if applicable)
-- Test plan or verification steps
+Commits **MUST** be signed off (`git commit -s`).
 
 ---
 
@@ -552,21 +465,11 @@ All code changes **SHOULD** include appropriate tests:
 - **Refactoring**: Ensure existing tests still pass
 - **API changes**: Update integration tests accordingly
 
-Frontend-specific gate (**mandatory**):
+**Frontend Cypress gate:** If the task changes user-visible behavior, the [Cypress Coverage Gate](workspaces/frontend/AGENTS.md#cypress-coverage-gate) applies. See [Phase 2 step 4](#phase-2-skill-routing) for the mandatory workflow.
 
-- If a frontend change affects user-visible workflow, navigation, forms, table actions, or API-driven UI states, the agent **MUST** read and follow the [Cypress Coverage Gate](workspaces/frontend/AGENTS.md#cypress-coverage-gate) in the frontend module.
-- When Cypress triggers match (new route, form change, table action, navigation, modal, CRUD workflow), tests **MUST** be added in the same changeset. Deferring to a follow-up is not acceptable.
-- The final response **MUST** include a `Cypress Gate` section listing which triggers matched and what tests were added (or stating no triggers matched).
-- Omitting this evaluation for user-visible changes is a protocol violation.
-
-**Test quality:**
-
-- ✅ **DO**: Write specific, meaningful tests with descriptive names
-  - Example: `TestWorkspaceController_ReconcileCreatesWorkspace` (clear)
-- ❌ **DON'T**: Write vague tests
-  - Example: `TestWorkspace` (unclear what aspect is tested)
-
-**See also:** [Quality Expectations](#quality-expectations)
+**Test quality:** Write specific, meaningful tests with descriptive names.
+- ✅ `TestWorkspaceController_ReconcileCreatesWorkspace` (clear)
+- ❌ `TestWorkspace` (unclear what aspect is tested)
 
 ---
 
@@ -576,36 +479,11 @@ Frontend-specific gate (**mandatory**):
 
 Respect module boundaries and separation of concerns:
 
-- **Controller**: Manages Kubernetes resources (CRDs, webhooks, reconciliation)
+- **Controller**: Manages Kubernetes resources (CRDs, webhooks, reconciliation). **SHOULD NOT** contain business logic.
+- **Backend**: Provides HTTP API for frontend. Contains business logic. Uses controller-runtime to interact with Kubernetes.
+- **Frontend**: User interface. Consumes backend API only — no direct Kubernetes interaction.
 
-  - **SHOULD NOT** contain business logic
-  - Interfaces with Kubernetes API only
-  - Validates and admits resources
-
-- **Backend**: Provides HTTP API for frontend
-
-  - Contains business logic
-  - Uses controller-runtime to interact with Kubernetes
-  - Generates OpenAPI specification
-
-- **Frontend**: User interface
-  - Consumes backend API only
-  - No direct Kubernetes interaction
-  - Uses generated OpenAPI client
-
-**MUST NOT** bypass these boundaries:
-
-- ❌ **DON'T**: Have frontend talk directly to Kubernetes
-- ❌ **DON'T**: Put business logic in controller webhooks
-- ❌ **DON'T**: Duplicate logic across modules
-
-**SHOULD**:
-
-- ✅ **DO**: Keep concerns separated
-- ✅ **DO**: Use defined interfaces (OpenAPI, CRDs)
-- ✅ **DO**: Share common code via libraries if needed
-
-**See also:** [Cross-Module Constraints](#cross-module-constraints), [Module-Specific Guidelines](#module-specific-guidelines)
+**MUST NOT** bypass these boundaries (e.g., frontend calling Kubernetes directly, business logic in controller webhooks, duplicated logic across modules).
 
 ---
 
@@ -615,230 +493,51 @@ Respect module boundaries and separation of concerns:
 
 **MUST NOT** combine backend API changes with frontend changes in the same changeset.
 
-The frontend references the backend OpenAPI specification via a version-controlled reference (`workspaces/frontend/scripts/swagger.version`). Frontend changes depending on API modifications **MUST** wait until those API changes are merged.
+The frontend references the backend OpenAPI specification via `workspaces/frontend/scripts/swagger.version`. When making API changes that affect frontend:
 
-**When making API changes that affect frontend, MUST follow this order:**
-
-1. Backend API changes **MUST** be complete and in the codebase first
-2. Update `swagger.version` with the backend commit hash that includes the API changes
+1. Backend API changes **MUST** be complete first
+2. Update `swagger.version` with the backend commit hash
 3. Regenerate frontend API client: `npm run generate:api`
-4. Only then implement frontend changes that depend on the new API
+4. Only then implement frontend changes
 
 ### Generated Code
 
-**MUST NOT** manually modify auto-generated code. Consult module-specific `AGENTS.md` files for:
+**MUST NOT** manually modify auto-generated code.
 
-- Which files are generated
-- How to regenerate them properly
-
-**Common generated files:**
-
-- **Frontend**: `src/generated/` - OpenAPI client generated from backend spec
-- **Controller**: `api/*/zz_generated.*.go` - Kubernetes client code
-- **Backend**: Various generated files from OpenAPI annotations
-
-**Regeneration commands:**
-
-- Frontend: `npm run generate:api`
-- Controller: `make generate` or `make manifests`
-- Backend: Check module AGENTS.md
-
-**See also:** [Code Organization](#code-organization), [Critical Components](#critical-components)
+| Module     | Generated files                        | Regeneration command                   |
+| ---------- | -------------------------------------- | -------------------------------------- |
+| Frontend   | `src/generated/`                       | `npm run generate:api`                 |
+| Controller | `api/*/zz_generated.*.go`              | `make generate` or `make manifests`    |
+| Backend    | Various (see module AGENTS.md)         | Check module AGENTS.md                 |
 
 ---
 
-## Critical Components
+## Coding Standards
 
-Human approval **MUST** additionally be obtained for:
-
-- **Custom Resource Definitions (CRDs)** — Breaking changes affect all users
-- **Webhook logic** — Security and admission control critical
-- **OpenAPI specifications** — Defines API contract between backend and frontend
-- **Kustomize base manifests** — Changes propagate to all overlays
-
-**See also:** [Change Boundaries](#change-boundaries), [Cross-Module Constraints](#cross-module-constraints)
-
----
-
-## Error Handling
-
-### General Principles
+### Error Handling
 
 - **Fail explicitly**: Never swallow errors silently
-- **Provide context**: Include relevant information in error messages
+- **Provide context**: Include what went wrong, what was attempted, and relevant identifiers (resource name, namespace)
 - **Return early**: Handle errors at point of occurrence
-- **Log appropriately**: Error logs **SHOULD** be actionable
-
-### Error Messages
-
-**Good error messages include:**
-
-- What went wrong
-- What was being attempted
-- Relevant context (resource name, namespace, etc.)
-- How to fix or investigate further
-
-✅ **Good**: "Failed to create workspace 'my-workspace' in namespace 'default': connection timeout"
-
-❌ **Bad**: "error" or "API error"
-
-### Error Recovery
-
-- **Don't panic**: Use proper error return values
-- **Handle expected errors**: Network timeouts, not found, etc.
 - **Propagate unexpected errors**: Let callers decide how to handle
-- **Clean up resources**: Use appropriate cleanup mechanisms (language-specific patterns in module AGENTS.md)
 
-**See also:** [Logging](#logging)
+### Logging
 
----
-
-## Logging
-
-### Logging Levels
-
-Use appropriate log levels:
-
-- **ERROR**: Something failed, requires attention
-- **WARN**: Unexpected but handled situation
-- **INFO**: Important state changes, lifecycle events
-- **DEBUG**: Detailed information for troubleshooting
-
-### Logging Best Practices
-
-✅ **DO**: Log
-
-- Startup and shutdown events
-- Configuration loaded
-- Important state transitions
-- Errors with full context
-- External API calls (at DEBUG level)
-
-❌ **DON'T**: Log
-
-- Secrets, tokens, passwords
-- Personally identifiable information (PII)
-- Excessive debug info in production
-- In tight loops (log at boundaries instead)
-
-### Log Message Format
-
-✅ **Good**: Include structured, contextual information
-
-- Example: `Workspace "my-workspace" created successfully in namespace "default"`
-- Include: resource names, namespaces, relevant IDs
-
-❌ **Avoid**: Vague, unstructured messages
-
-- Example: "Workspace created" (missing context)
-
-**See also:** [Error Handling](#error-handling)
-
----
-
-## Performance Considerations
-
-### General Guidelines
-
-- **Profile before optimizing**: Don't optimize without data
-- **Design for scale**: Support multiple users, resources
-- **Minimize network calls**: Batch operations when possible
-- **Cache appropriately**: Use caching for expensive operations
-- **Be mindful of resources**: CPU, memory, network bandwidth
-
-### Frontend Performance
-
-- **Lazy load**: Load components and data as needed
-- **Minimize bundle size**: Tree-shake imports, code split
-- **Optimize re-renders**: Use React.memo, useMemo, useCallback
-- **Debounce user inputs**: Avoid excessive API calls
-
-### Backend Performance
-
-- **Limit list operations**: Use pagination, filtering
-- **Use efficient queries**: Avoid N+1 queries
-- **Set appropriate timeouts**: Don't let requests hang
-- **Pool connections**: Reuse HTTP clients, database connections
-
-### Controller Performance
-
-- **Use watches, not polls**: Leverage Kubernetes watch API
-- **Rate limit reconciles**: Prevent excessive reconciliation
-- **Use caching**: Controller-runtime provides caching
-- **Avoid blocking operations**: Don't block reconcile loop
-
-**See also:** [Module-Specific Guidelines](#module-specific-guidelines)
-
----
-
-## Kubernetes Best Practices
-
-- Respect Kubeflow RBAC patterns and conventions
-- Kustomize overlays **MUST NOT** break base configurations
-- Service mesh (Istio) components are optional - keep them decoupled
-- Use proper health checks (liveness, readiness probes)
-- Set resource requests and limits appropriately
-- Use namespaces for isolation
-- Label resources consistently for observability
-
----
-
-## Common Coding Pitfalls
-
-### Cross-Module Violations
-
-- ❌ **DON'T**: Mix API and frontend changes in the same changeset
-- ✅ **DO**: Implement API changes first, then frontend changes separately
-- ❌ **DON'T**: Manually edit generated files
-- ✅ **DO**: Use regeneration commands (see module AGENTS.md)
-- ❌ **DON'T**: Bypass module boundaries (e.g., frontend calling Kubernetes directly)
-- ✅ **DO**: Respect separation: Frontend → Backend → Kubernetes
-
-### Security and Safety
-
-- ❌ **DON'T**: Commit secrets, tokens, or credentials
-- ✅ **DO**: Use environment variables and Kubernetes secrets
-- ❌ **DON'T**: Log sensitive data (passwords, tokens, PII)
-- ✅ **DO**: Log contextual information for debugging
-- ❌ **DON'T**: Skip input validation
-- ✅ **DO**: Validate at all system boundaries
-
-### Code Quality
-
-- ❌ **DON'T**: Leave commented-out code or debug statements
-- ✅ **DO**: Remove unused code (it's in git history)
-- ❌ **DON'T**: Commit TODOs/FIXMEs without ticket references
-- ✅ **DO**: Include issue numbers: `// TODO(#123): description`
-- ❌ **DON'T**: Skip tests without ticket reference
-- ✅ **DO**: File an issue first: `it.skip('test', () => {}); // Skip until #456`
-- ❌ **DON'T**: Swallow errors silently
-- ✅ **DO**: Provide context in error messages
-- ❌ **DON'T**: Skip tests for "small changes"
-- ✅ **DO**: Add tests for all functional changes
-- ❌ **DON'T**: Assume generated code is current
-- ✅ **DO**: Regenerate when needed (see Generated Code section)
-- ❌ **DON'T**: Add comments that restate what the code does
-- ✅ **DO**: Write self-documenting code; comment only the "why"
+Use appropriate log levels (ERROR → WARN → INFO → DEBUG). Include structured, contextual information (resource names, namespaces, IDs). **MUST NOT** log secrets, tokens, PII, or in tight loops.
 
 ### Performance
 
-- ❌ **DON'T**: Make N+1 queries or excessive API calls
-- ✅ **DO**: Batch operations and use pagination
-- ❌ **DON'T**: Block on long-running operations
-- ✅ **DO**: Use async patterns appropriately
+- Profile before optimizing
+- Minimize network calls; batch operations; use pagination
+- Module-specific: see module AGENTS.md for frontend (lazy load, memoize), backend (connection pooling, timeouts), and controller (watches over polls, rate-limited reconciles) patterns
 
----
+### Kubernetes Best Practices
 
-## Module-Specific Guidelines
-
-Each module has its own AGENTS.md file with detailed guidance:
-
-- **[Controller Guidelines](workspaces/controller/AGENTS.md)** - Kubernetes controller, CRDs, webhooks, reconciliation
-- **[Backend Guidelines](workspaces/backend/AGENTS.md)** - Go API server, business logic, Kubernetes integration
-- **[Frontend Guidelines](workspaces/frontend/AGENTS.md)** - React, TypeScript, UI/UX, PatternFly
-- **[Cypress Testing Guidelines](workspaces/frontend/src/__tests__/cypress/AGENTS.md)** - E2E testing, page objects, test patterns
-
-**Agents MUST read the module-specific guidelines when working in that module.**
+- Respect Kubeflow RBAC patterns and conventions
+- Kustomize overlays **MUST NOT** break base configurations
+- Use proper health checks (liveness, readiness probes)
+- Set resource requests and limits appropriately
+- Label resources consistently for observability
 
 ---
 
@@ -919,17 +618,9 @@ Am I uncertain about the correct approach?
 
 ### Module Quick Links
 
-| Module     | Path                                         | Key Responsibility             |
-| ---------- | -------------------------------------------- | ------------------------------ |
-| Controller | `workspaces/controller/`                     | CRDs, webhooks, reconciliation |
-| Backend    | `workspaces/backend/`                        | HTTP API, business logic       |
-| Frontend   | `workspaces/frontend/`                       | React UI, user experience      |
-| Cypress    | `workspaces/frontend/src/__tests__/cypress/` | E2E tests                      |
-
-### Pre-Change Checklist
-
-- [ ] Read the relevant module's AGENTS.md
-- [ ] Identify if change requires human approval
-- [ ] Check for existing patterns to follow
-- [ ] Verify no generated files need manual edits
-- [ ] Plan for required tests
+| Module     | Path                                         | AGENTS.md                                                                             |
+| ---------- | -------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Controller | `workspaces/controller/`                     | [Controller Guidelines](workspaces/controller/AGENTS.md)                              |
+| Backend    | `workspaces/backend/`                        | [Backend Guidelines](workspaces/backend/AGENTS.md)                                    |
+| Frontend   | `workspaces/frontend/`                       | [Frontend Guidelines](workspaces/frontend/AGENTS.md)                                  |
+| Cypress    | `workspaces/frontend/src/__tests__/cypress/` | [Cypress Guidelines](workspaces/frontend/src/__tests__/cypress/AGENTS.md)             |

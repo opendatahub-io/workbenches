@@ -28,7 +28,7 @@ metadata:
 - Include context in errors (resource, namespace, operation).
 - Avoid leaking secrets or internal-only details.
 
-## Checklist
+## Done Criteria
 
 - Endpoint behavior aligns with existing patterns.
 - Validation and authorization are explicit.

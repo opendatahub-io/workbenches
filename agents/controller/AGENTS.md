@@ -26,6 +26,12 @@ make test
 # Run tests with verbose output
 ginkgo run -v ./...
 
+# Run specific test suite
+ginkgo run -v ./internal/controller/...
+
+# Run end-to-end tests (requires Kind cluster)
+make test-e2e
+
 # Generate CRD manifests
 make manifests
 
@@ -34,6 +40,12 @@ make generate
 
 # Install CRDs to cluster
 make install
+
+# Uninstall CRDs from cluster
+make uninstall
+
+# Deploy controller to cluster
+make deploy
 
 # Run controller locally
 make run
@@ -51,14 +63,12 @@ make lint
 - [Skill Playbooks](#skill-playbooks)
 - [Skill Selection Matrix](#skill-selection-matrix)
 - [Generated Code](#generated-code)
-- [Development Commands](#development-commands)
 - [Code Conventions](#code-conventions)
   - [Input Validation](#input-validation)
   - [Error Handling & Status](#error-handling--status)
   - [Authorization & RBAC](#authorization--rbac)
   - [Consistency & Conventions](#consistency--conventions)
 - [Common Controller Pitfalls Summary](#common-controller-pitfalls-summary)
-- [Common Tasks](#common-tasks)
 - [Troubleshooting](#troubleshooting)
 - [Out of Scope](#out-of-scope)
 - [Response Contract](#response-contract)
@@ -221,28 +231,6 @@ make manifests
 
 ---
 
-## Development Commands
-
-See [Quick Commands](#quick-commands) at the top of this file for common commands.
-
-**Additional options:**
-
-```bash
-# Run specific test suite
-ginkgo run -v ./internal/controller/...
-
-# Run end-to-end tests (requires Kind cluster)
-make test-e2e
-
-# Uninstall CRDs from cluster
-make uninstall
-
-# Deploy controller to cluster
-make deploy
-```
-
----
-
 ## Code Conventions
 
 - Follow controller-runtime patterns and best practices
@@ -309,17 +297,6 @@ make deploy
 
 ---
 
-## Common Tasks
-
-Use the skill playbooks above for task execution, especially:
-
-- CRD/schema evolution: `kubeflow-notebooks-controller-crd-evolution`
-- Reconcile implementation: `kubeflow-notebooks-controller-reconcile-pattern`
-- Status logic: `kubeflow-notebooks-controller-status-transitions`
-- Webhook + RBAC/finalizers: `kubeflow-notebooks-controller-webhook-validation` and `kubeflow-notebooks-controller-rbac-and-finalizers`
-
----
-
 ## Troubleshooting
 
 ### Manual Envtest Setup
@@ -356,10 +333,7 @@ The following are handled by other modules and **MUST NOT** be modified in contr
 
 ## Response Contract
 
-- Follow global response contract in [`../../AGENTS.md`](../../AGENTS.md#response-contract).
-- Final response must end with `Files Used` list relevant to this task.
-- `Files Used` must include controller-relevant `AGENTS.md` and any `SKILL.md` files applied.
-- Do not list source files in `Files Used` unless explicitly requested by the user.
+Follow the [global response contract](../../AGENTS.md#response-contract).
 
 ---
 
@@ -392,12 +366,3 @@ The following are handled by other modules and **MUST NOT** be modified in contr
 ### Reconciler Pattern Template
 
 > **See [Controller Reconcile Pattern Skill](../../.agents/skills/kubeflow-notebooks-controller-reconcile-pattern/SKILL.md)** for the current reconcile template workflow.
-
-### Pre-Task Checklist
-
-- [ ] Read existing controller patterns in `internal/controller/`
-- [ ] Check if CRD schema changes require approval
-- [ ] Verify RBAC markers are correct for new operations
-- [ ] Plan idempotent reconciliation logic
-- [ ] Add/update tests with envtest
-- [ ] Run `make manifests` after any API changes

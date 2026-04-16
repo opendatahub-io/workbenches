@@ -29,11 +29,17 @@ ginkgo run -v ./...
 # Run specific test suite
 ginkgo run -v ./api/...
 
+# Run tests matching a pattern
+ginkgo run -v --focus="Workspaces Handler" ./api/...
+
 # Generate OpenAPI/Swagger docs
 make swag
 
 # Lint code
 make lint
+
+# Lint with auto-fix
+make lint-fix
 
 # Build binary
 make build
@@ -51,7 +57,6 @@ make run
 - [Skill Selection Matrix](#skill-selection-matrix)
 - [API Versioning](#api-versioning)
 - [Generated Code](#generated-code)
-- [Development Commands](#development-commands)
 - [Code Conventions](#code-conventions)
 - [Common Pitfalls Summary](#common-pitfalls-summary)
 - [Troubleshooting](#troubleshooting)
@@ -210,22 +215,6 @@ make swag
 
 ---
 
-## Development Commands
-
-See [Quick Commands](#quick-commands) at the top of this file for common commands.
-
-**Additional options:**
-
-```bash
-# Run tests matching a pattern
-ginkgo run -v --focus="Workspaces Handler" ./api/...
-
-# Run linter with auto-fix
-make lint-fix
-```
-
----
-
 ## Code Conventions
 
 - Follow standard Go conventions and idioms
@@ -310,10 +299,7 @@ The following are handled by other modules and **MUST NOT** be modified in backe
 
 ## Response Contract
 
-- Follow global response contract in [`../../AGENTS.md`](../../AGENTS.md#response-contract).
-- Final response must end with `Files Used` list relevant to this task.
-- `Files Used` must include backend-relevant `AGENTS.md` and any `SKILL.md` files applied.
-- Do not list source files in `Files Used` unless explicitly requested by the user.
+Follow the [global response contract](../../AGENTS.md#response-contract).
 
 ---
 
@@ -344,11 +330,3 @@ The following are handled by other modules and **MUST NOT** be modified in backe
 ### Handler Pattern Template
 
 > **See [Backend Handler Implementation Skill](../../.agents/skills/kubeflow-notebooks-backend-handler-implementation/SKILL.md)** for the current handler template workflow.
-
-### Pre-Task Checklist
-
-- [ ] Read existing handler patterns in `api/`
-- [ ] Check if OpenAPI annotations need updating
-- [ ] Verify repository layer exists for data access
-- [ ] Plan error handling with proper context
-- [ ] Add/update tests in corresponding `_test.go` file

@@ -32,3 +32,15 @@ metadata:
 
 - Auth checks are explicit, scoped, and test-covered.
 - Unauthorized requests fail predictably and early.
+
+## Verification
+
+From `workspaces/backend/` run:
+
+1. `make lint`
+2. `ginkgo run -v ./api/...`
+
+Pass criteria:
+
+- Authorized and unauthorized paths are tested.
+- No lint failures.

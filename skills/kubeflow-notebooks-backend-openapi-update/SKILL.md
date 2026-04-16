@@ -21,7 +21,7 @@ metadata:
 4. Run backend tests and lint.
 5. Document downstream impact for frontend sequencing.
 
-## Compatibility Guardrails
+## Guardrails
 
 - Prefer additive changes where possible.
 - Explicitly mark breaking changes and migration needs.

@@ -28,6 +28,9 @@ npm run cypress:open:mock
 
 # Run specific spec file
 npm run test:cypress-ci -- --spec "cypress/tests/mocked/workspaces/workspaces.cy.ts"
+
+# Generate coverage report
+npm run cypress:coverage
 ```
 
 ## Table of Contents
@@ -36,13 +39,10 @@ npm run test:cypress-ci -- --spec "cypress/tests/mocked/workspaces/workspaces.cy
 - [Technology Stack](#technology-stack)
 - [Scope of Responsibility](#scope-of-responsibility)
 - [Core Principle: Use data-testid](#core-principle-use-data-testid-with-cyfindbytestid)
-- [Running Tests](#running-tests)
-- [Debugging Tests](#debugging-tests)
 - [Project Structure](#project-structure)
 - [Skill Playbooks](#skill-playbooks)
 - [Skill Selection Matrix](#skill-selection-matrix)
 - [Common Pitfalls Summary](#common-pitfalls-summary)
-- [Common Tasks](#common-tasks)
 - [Out of Scope](#out-of-scope)
 - [Response Contract](#response-contract)
 - [Quick Reference](#quick-reference)
@@ -110,30 +110,6 @@ All element selection in Cypress tests **MUST** prioritize `data-testid` attribu
 - **Add `data-testid` to UI components** if they don't have one
 
 `data-testid` provides stable, explicit, and performant selectors that are resilient to UI refactoring.
-
----
-
-## Running Tests
-
-See [Quick Commands](#quick-commands) at the top of this file for common commands.
-
-**Additional options:**
-
-```bash
-# Generate coverage report
-npm run cypress:coverage
-```
-
----
-
-## Debugging Tests
-
-- Use `cy.debug()` to pause execution
-- Use `cy.log()` to add custom log messages
-- Check Cypress Test Runner for detailed command logs
-- Inspect screenshots in `results/mocked/screenshots/`
-- Watch videos in `results/mocked/videos/` (only saved on failure)
-- Use Chrome DevTools in Cypress UI
 
 ---
 
@@ -237,18 +213,6 @@ Fallback:
 
 ---
 
-## Common Tasks
-
-Use the skill playbooks above for task execution, especially:
-
-- New E2E tests: `kubeflow-notebooks-cypress-e2e-authoring`
-- API mocks/builders: `kubeflow-notebooks-cypress-api-mocking-and-builders`
-- Page object work: `kubeflow-notebooks-cypress-page-object-design`
-- Timing and waits: `kubeflow-notebooks-cypress-waiting-strategies`
-- Flake triage: `kubeflow-notebooks-cypress-flake-triage`
-
----
-
 ## Out of Scope
 
 - Unit tests (use frontend module guidance in [`../../../AGENTS.md`](../../../AGENTS.md))
@@ -261,10 +225,7 @@ Use the skill playbooks above for task execution, especially:
 
 ## Response Contract
 
-- Follow global response contract in [`../../../../../AGENTS.md`](../../../../../AGENTS.md#response-contract).
-- Final response must end with `Files Used` list relevant to this task.
-- `Files Used` must include cypress-relevant `AGENTS.md` and any `SKILL.md` files applied.
-- Do not list source files in `Files Used` unless explicitly requested by the user.
+Follow the [global response contract](../../../../../AGENTS.md#response-contract).
 
 ---
 
@@ -291,6 +252,12 @@ Use the skill playbooks above for task execution, especially:
 | Mock data        | `cypress/fixtures/` or `~/__mocks__/` |
 | Config           | `cypress.config.ts`                   |
 
+### Debugging
+
+- `cy.debug()` to pause, `cy.log()` for messages
+- Screenshots: `results/mocked/screenshots/`, videos: `results/mocked/videos/` (failure only)
+- Use Chrome DevTools in the Cypress interactive UI
+
 ### Test Pattern Template
 
 > **See [Cypress E2E Authoring Skill](../../../../../.agents/skills/kubeflow-notebooks-cypress-e2e-authoring/SKILL.md)** for the current test template workflow.
@@ -298,12 +265,3 @@ Use the skill playbooks above for task execution, especially:
 ### Page Object Template
 
 > **See [Cypress Page Object Design Skill](../../../../../.agents/skills/kubeflow-notebooks-cypress-page-object-design/SKILL.md)** for the current page object template workflow.
-
-### Pre-Task Checklist
-
-- [ ] Check if UI component has `data-testid` (add if missing)
-- [ ] Create or update a page object for the page
-- [ ] Set up API mocks with `cy.interceptApi()`
-- [ ] Use `cy.findByTestId()` for all selectors
-- [ ] Verify test is independent (no reliance on other tests)
-- [ ] Run tests multiple times to check for flakiness

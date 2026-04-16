@@ -41,7 +41,7 @@ Do not proceed until at least a PR link or branch name is provided.
 - `Rationale`: why this is risky or incorrect
 - `Suggested fix`: concrete direction
 
-## Review Discipline
+## Guardrails
 
 - Prioritize correctness and risk over stylistic preferences.
 - If no issues found, state that and list residual test gaps.
