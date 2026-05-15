@@ -1,0 +1,81 @@
+- op: add
+  path: /rules/-
+  value:
+    apiGroups:
+    - gateway.networking.k8s.io
+    resources:
+    - httproutes
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+- op: add
+  path: /rules/-
+  value:
+    apiGroups:
+    - ""
+    resources:
+    - configmaps
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+- op: add
+  path: /rules/-
+  value:
+    apiGroups:
+    - rbac.authorization.k8s.io
+    resources:
+    - clusterrolebindings
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+# TokenReview permissions for kube-rbac-proxy authentication
+- op: add
+  path: /rules/-
+  value:
+    apiGroups:
+    - authentication.k8s.io
+    resources:
+    - tokenreviews
+    verbs:
+    - create
+# SubjectAccessReview permissions for kube-rbac-proxy authorization
+- op: add
+  path: /rules/-
+  value:
+    apiGroups:
+    - authorization.k8s.io
+    resources:
+    - subjectaccessreviews
+    verbs:
+    - create
+# ReferenceGrant permissions for cross-namespace HTTPRoute backend references
+- op: add
+  path: /rules/-
+  value:
+    apiGroups:
+    - gateway.networking.k8s.io
+    resources:
+    - referencegrants
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
