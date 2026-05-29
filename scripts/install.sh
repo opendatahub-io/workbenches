@@ -31,10 +31,11 @@ TOTAL_ERRORS=0
 # ============================================================================
 
 create_link() {
-    local source="$1"
-    local target="$2"
+    local source_dir="$1"
+    local source="$2"
+    local target="$3"
 
-    local full_source="$AGENTS_DIR/$source"
+    local full_source="$source_dir/$source"
     local full_target="$TARGET_ROOT/$target"
 
     # Check source exists
@@ -85,7 +86,7 @@ TARGET_INPUT="$1"
 
 # Show help
 if [[ -z "$TARGET_INPUT" ]] || [[ "$TARGET_INPUT" == "-h" ]] || [[ "$TARGET_INPUT" == "--help" ]]; then
-    show_usage "$0" "Creates symlinks from Kubeflow Notebooks to the agent files in this repository."
+    show_usage "$0" "Creates symlinks from Kubeflow Notebooks to the AI rules files in this repository."
 fi
 
 # Resolve and validate target path
@@ -96,7 +97,7 @@ if [[ -z "$TARGET_ROOT" ]]; then
 fi
 
 validate_kubeflow_dir "$TARGET_ROOT" || exit 1
-validate_mappings_file || exit 1
+discover_resource_types || exit 1
 
 # Run installation
 print_message "Installing AI rules..."
@@ -104,12 +105,13 @@ print_message "  Source: $REPO_ROOT"
 print_message "  Target: $TARGET_ROOT"
 print_message ""
 
-print_info "Installing mapped AI rules..."
-
-process_mappings create_link
+for resource_type in "${RESOURCE_TYPES[@]}"; do
+    print_info "Installing ${resource_type}..."
+    process_resource_type "$resource_type" create_link
+    print_message ""
+done
 
 # Summary
-print_message ""
 print_message "Installation complete!"
 print_message "  Created: $TOTAL_CREATED"
 print_message "  Skipped: $TOTAL_SKIPPED"

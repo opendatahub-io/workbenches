@@ -27,8 +27,9 @@ TOTAL_SKIPPED=0
 # ============================================================================
 
 remove_link() {
-    local source="$1"  # Not used, but received from process_mappings
-    local target="$2"
+    local source_dir="$1"  # Not used, but received from process_mappings
+    local source="$2"      # Not used, but received from process_mappings
+    local target="$3"
     local full_target="$TARGET_ROOT/$target"
 
     if [[ -L "$full_target" ]]; then
@@ -62,7 +63,7 @@ TARGET_INPUT="$1"
 
 # Show help
 if [[ -z "$TARGET_INPUT" ]] || [[ "$TARGET_INPUT" == "-h" ]] || [[ "$TARGET_INPUT" == "--help" ]]; then
-    show_usage "$0" "Removes symlinks to agent files."
+    show_usage "$0" "Removes AI rules symlinks."
 fi
 
 # Resolve and validate target path
@@ -77,18 +78,19 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
     exit 1
 fi
 
-validate_mappings_file || exit 1
+discover_resource_types || exit 1
 
 # Run uninstallation
 print_message "Uninstalling AI rules from: $TARGET_ROOT"
 print_message ""
 
-print_info "Removing mapped AI rules..."
-
-process_mappings remove_link
+for resource_type in "${RESOURCE_TYPES[@]}"; do
+    print_info "Removing ${resource_type}..."
+    process_resource_type "$resource_type" remove_link
+    print_message ""
+done
 
 # Summary
-print_message ""
 print_message "Uninstall complete!"
 print_message "  Removed:  $TOTAL_REMOVED"
 print_message "  Restored: $TOTAL_RESTORED"

@@ -29,10 +29,11 @@ TOTAL_MISSING=0
 # ============================================================================
 
 check_link() {
-    local source="$1"
-    local target="$2"
+    local source_dir="$1"
+    local source="$2"
+    local target="$3"
 
-    local full_source="$AGENTS_DIR/$source"
+    local full_source="$source_dir/$source"
     local full_target="$TARGET_ROOT/$target"
 
     if [[ ! -e "$full_target" ]] && [[ ! -L "$full_target" ]]; then
@@ -72,7 +73,7 @@ TARGET_INPUT="$1"
 
 # Show help
 if [[ -z "$TARGET_INPUT" ]] || [[ "$TARGET_INPUT" == "-h" ]] || [[ "$TARGET_INPUT" == "--help" ]]; then
-    show_usage "$0" "Checks if agent symlinks are correctly installed."
+    show_usage "$0" "Checks if AI rules symlinks are correctly installed."
 fi
 
 # Resolve and validate target path
@@ -87,18 +88,19 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
     exit 1
 fi
 
-validate_mappings_file || exit 1
+discover_resource_types || exit 1
 
 # Run check
 print_message "Checking AI rules in: $TARGET_ROOT"
 print_message ""
 
-print_info "Checking mapped AI rules..."
-
-process_mappings check_link
+for resource_type in "${RESOURCE_TYPES[@]}"; do
+    print_info "Checking ${resource_type}..."
+    process_resource_type "$resource_type" check_link
+    print_message ""
+done
 
 # Summary
-print_message ""
 print_message "Check complete!"
 print_message "  Valid:   $TOTAL_VALID"
 print_message "  Invalid: $TOTAL_INVALID"

@@ -16,8 +16,6 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-AGENTS_DIR="$REPO_ROOT/agents"
-MAPPINGS_FILE="$AGENTS_DIR/mappings.conf"
 
 # ============================================================================
 # Output Configuration
@@ -80,7 +78,7 @@ QUIET="${QUIET:-false}"
 parse_common_args() {
     QUIET="false"
     PARSED_ARGS=()
-    
+
     for arg in "$@"; do
         case "$arg" in
             -q|--quiet)
@@ -97,7 +95,7 @@ parse_common_args() {
 show_usage() {
     local script_name="$1"
     local description="$2"
-    
+
     echo "Usage: $script_name [OPTIONS] /path/to/kubeflow-notebooks"
     echo ""
     echo "$description"
@@ -115,11 +113,11 @@ show_usage() {
 # Resolve path to absolute and validate it exists
 resolve_target_path() {
     local target="$1"
-    
+
     if [[ -z "$target" ]]; then
         return 1
     fi
-    
+
     # Resolve to absolute path
     if [[ "$target" == /* ]]; then
         echo "$target"
@@ -131,24 +129,35 @@ resolve_target_path() {
 # Validate target is a Kubeflow Notebooks directory
 validate_kubeflow_dir() {
     local target="$1"
-    
+
     if [[ ! -d "$target" ]]; then
         print_error "Target directory does not exist: $target"
         return 1
     fi
-    
+
     if [[ ! -d "$target/workspaces" ]]; then
         print_error "Invalid Kubeflow Notebooks directory (missing workspaces/): $target"
         return 1
     fi
-    
+
     return 0
 }
 
-# Validate mappings file exists
-validate_mappings_file() {
-    if [[ ! -f "$MAPPINGS_FILE" ]]; then
-        print_error "Mappings file not found: $MAPPINGS_FILE"
+# ============================================================================
+# Resource Type Discovery
+# ============================================================================
+
+# Discover all resource types (top-level directories with a mappings.conf).
+# Populates the RESOURCE_TYPES array.
+discover_resource_types() {
+    RESOURCE_TYPES=()
+    for dir in "$REPO_ROOT"/*/; do
+        [[ -f "$dir/mappings.conf" ]] || continue
+        RESOURCE_TYPES+=("$(basename "$dir")")
+    done
+
+    if [[ ${#RESOURCE_TYPES[@]} -eq 0 ]]; then
+        print_error "No resource types found (no directories with mappings.conf)"
         return 1
     fi
     return 0
@@ -158,43 +167,69 @@ validate_mappings_file() {
 # Mappings File Functions
 # ============================================================================
 
-# Process each mapping in the config file
-# Usage: process_mappings callback_function
+# Process each mapping in a config file.
+# Usage: process_mappings <source_dir> <mappings_file> <callback>
 # The callback receives: source target
+#   source is relative to source_dir
+#   target is relative to TARGET_ROOT
 process_mappings() {
-    local callback="$1"
-    
+    local source_dir="$1"
+    local mappings_file="$2"
+    local callback="$3"
+
+    if [[ ! -f "$mappings_file" ]]; then
+        print_error "Mappings file not found: $mappings_file"
+        return 1
+    fi
+
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip comments and empty lines
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "${line// }" ]] && continue
-        
+
         # Parse source and target (whitespace separated)
         local source target
         read -r source target <<< "$line"
-        
+
         if [[ -n "$source" ]] && [[ -n "$target" ]]; then
-            "$callback" "$source" "$target"
+            "$callback" "$source_dir" "$source" "$target"
         fi
-    done < "$MAPPINGS_FILE"
+    done < "$mappings_file"
 }
 
-# Generate .gitignore entries from mappings
+# Process all mappings for a single resource type.
+# Usage: process_resource_type <resource_type> <callback>
+# The callback receives: source_dir source target
+process_resource_type() {
+    local resource_type="$1"
+    local callback="$2"
+    local source_dir="$REPO_ROOT/$resource_type"
+    local mappings_file="$source_dir/mappings.conf"
+
+    process_mappings "$source_dir" "$mappings_file" "$callback"
+}
+
+# Generate .gitignore entries from all discovered mappings files
 generate_gitignore_entries() {
     local entries=()
-    
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${line// }" ]] && continue
-        
-        local source target
-        read -r source target <<< "$line"
-        
-        if [[ -n "$target" ]]; then
-            entries+=("$target")
-        fi
-    done < "$MAPPINGS_FILE"
-    
+
+    for resource_type in "${RESOURCE_TYPES[@]}"; do
+        local mappings_file="$REPO_ROOT/$resource_type/mappings.conf"
+        [[ -f "$mappings_file" ]] || continue
+
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+
+            local source target
+            read -r source target <<< "$line"
+
+            if [[ -n "$target" ]]; then
+                entries+=("$target")
+            fi
+        done < "$mappings_file"
+    done
+
     # Print unique entries
     printf '%s\n' "${entries[@]}" | sort -u
 }
