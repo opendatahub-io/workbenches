@@ -2,6 +2,7 @@ import type { UserSettings } from 'mod-arch-core';
 import type {
   ApiErrorEnvelope,
   ApiNamespaceListEnvelope,
+  ApiPodTemplateOptionsEnvelope,
   ApiPVCCreateEnvelope,
   ApiPVCListEnvelope,
   ApiSecretCreateEnvelope,
@@ -97,6 +98,16 @@ declare global {
           type: 'POST /api/:apiVersion/workspacekinds',
           options: { path: { apiVersion: string } },
           response: ApiWorkspaceKindCreateEnvelope | ApiErrorEnvelope,
+        ) => Cypress.Chainable<null>) &
+        ((
+          type: 'PUT /api/:apiVersion/workspacekinds/:kind',
+          options: { path: { apiVersion: string; kind: string } },
+          response: ApiWorkspaceKindEnvelope | ApiErrorEnvelope,
+        ) => Cypress.Chainable<null>) &
+        ((
+          type: 'POST /api/:apiVersion/workspacekinds/:kind/podtemplate/options/listvalues',
+          options: { path: { apiVersion: string; kind: string } },
+          response: ApiPodTemplateOptionsEnvelope | ApiErrorEnvelope,
         ) => Cypress.Chainable<null>) &
         ((
           type: 'GET /api/:apiVersion/persistentvolumeclaims/:namespace',
