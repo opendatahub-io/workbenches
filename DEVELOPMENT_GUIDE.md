@@ -237,3 +237,11 @@ Each component has a `Makefile` or `package.json` to help with building, testing
 You should start by reviewing the these files in each component directory.
 
 We welcome contributions to improve the local development experience, please open an issue or PR!
+
+## Agentic Developement
+
+Agent rules and skills are defined in `/agent-rules`. In order to use them for development:
+```bash
+cd agent-rules
+./scripts/install.sh ..
+```
