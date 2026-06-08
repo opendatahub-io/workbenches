@@ -78,6 +78,7 @@ module.exports = smp.wrap(
       optimization: {
         runtimeChunk: 'single',
         removeEmptyChunks: true,
+        splitChunks: false, // Disable automatic code splitting in dev mode
       },
       devServer: {
         host: HOST,
