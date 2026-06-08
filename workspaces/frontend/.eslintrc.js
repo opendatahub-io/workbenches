@@ -1,4 +1,5 @@
 module.exports = {
+  root: true,
   ignorePatterns: ['src/__tests__/cypress/coverage'],
   parser: '@typescript-eslint/parser',
   env: {
