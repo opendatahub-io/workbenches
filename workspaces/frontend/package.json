@@ -13,7 +13,8 @@
     },
     "istanbul-lib-processinfo": {
       "rimraf": "^3.0.2"
-    }
+    },
+    "axios": "^1.15.0"
   },
   "engines": {
     "npm": "^11.10.0",
