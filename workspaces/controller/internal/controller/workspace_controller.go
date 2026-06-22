@@ -339,9 +339,10 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Filter out kube-rbac-proxy services from the count
 	var workspaceServices []corev1.Service
 	for _, svc := range ownedServices.Items {
-		if svc.Labels["app.kubernetes.io/component"] != "kube-rbac-proxy" {
-			workspaceServices = append(workspaceServices, svc)
+		if component, ok := svc.Labels["app.kubernetes.io/component"]; ok && component == "kube-rbac-proxy" {
+			continue
 		}
+		workspaceServices = append(workspaceServices, svc)
 	}
 
 	// reconcile Service
@@ -535,14 +536,6 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				log.Info("Creating kube-rbac-proxy ConfigMap",
 					"name", kubeRBACProxyConfigMap.GetName(),
 					"namespace", workspace.GetNamespace())
-				// Add .metatada.ownerReferences to the kube-rbac-proxy ConfigMap to be deleted by
-				// the Kubernetes garbage collector if the notebook is deleted
-				err = ctrl.SetControllerReference(workspace, kubeRBACProxyConfigMap, r.Scheme)
-				if err != nil && !apierrors.IsAlreadyExists(err) {
-					log.Error(err, "Unable to add OwnerReference to the kube-rbac-proxy ConfigMap")
-					return ctrl.Result{}, err
-				}
-				// Create the kube-rbac-proxy ConfigMap in the cluster
 				err = r.Create(ctx, kubeRBACProxyConfigMap)
 				if err != nil && !apierrors.IsAlreadyExists(err) {
 					log.Error(err, "Unable to create the kube-rbac-proxy ConfigMap")
@@ -552,45 +545,12 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				log.Error(err, "Unable to fetch the kube-rbac-proxy ConfigMap")
 				return ctrl.Result{}, err
 			}
-		} else {
-			// ConfigMap exists, check if it needs to be updated
-			needsUpdate := false
-
-			// Check if data differs
-			if len(foundKubeRBACProxyConfigMap.Data) != len(kubeRBACProxyConfigMap.Data) {
-				needsUpdate = true
-			} else {
-				for key, value := range kubeRBACProxyConfigMap.Data {
-					if foundKubeRBACProxyConfigMap.Data[key] != value {
-						needsUpdate = true
-						break
-					}
-				}
-			}
-
-			// Check if labels differ
-			if !needsUpdate {
-				if len(foundKubeRBACProxyConfigMap.Labels) != len(kubeRBACProxyConfigMap.Labels) {
-					needsUpdate = true
-				} else {
-					for key, value := range kubeRBACProxyConfigMap.Labels {
-						if foundKubeRBACProxyConfigMap.Labels[key] != value {
-							needsUpdate = true
-							break
-						}
-					}
-				}
-			}
-
-			if needsUpdate {
-				log.V(2).Info("Reconciling kube-rbac-proxy ConfigMap", "name", foundKubeRBACProxyConfigMap.GetName())
-				foundKubeRBACProxyConfigMap.Data = kubeRBACProxyConfigMap.Data
-				foundKubeRBACProxyConfigMap.Labels = kubeRBACProxyConfigMap.Labels
-				err = r.Update(ctx, foundKubeRBACProxyConfigMap)
-				if err != nil {
-					log.Error(err, "Unable to reconcile the kube-rbac-proxy ConfigMap")
-					return ctrl.Result{}, err
-				}
+		} else if helper.CopyConfigMapFields(kubeRBACProxyConfigMap, foundKubeRBACProxyConfigMap) {
+			log.V(2).Info("Reconciling kube-rbac-proxy ConfigMap", "name", foundKubeRBACProxyConfigMap.GetName())
+			err = r.Update(ctx, foundKubeRBACProxyConfigMap)
+			if err != nil {
+				log.Error(err, "Unable to reconcile the kube-rbac-proxy ConfigMap")
+				return ctrl.Result{}, err
 			}
 		}
 
@@ -647,9 +607,8 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Info("Creating ReferenceGrant to allow cross-namespace HTTPRoute backend references")
-				// Create the ReferenceGrant
-				// Note: We cannot use OwnerReference since ReferenceGrant is in user namespace
-				// and Notebook could be deleted. We'll use finalizers for cleanup.
+				// OwnerReference is set above; the garbage collector deletes the ReferenceGrant
+				// when the Workspace is deleted.
 				err = r.Create(ctx, referenceGrant)
 				if err != nil && !apierrors.IsAlreadyExists(err) {
 					log.Error(err, "Unable to create ReferenceGrant")

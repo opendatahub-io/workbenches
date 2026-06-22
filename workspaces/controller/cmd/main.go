@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -126,7 +127,7 @@ func main() {
 		"ClusterDomain", cfg.ClusterDomain,
 		"IstioGateway", cfg.IstioGateway,
 		"IstioHosts", cfg.IstioHosts,
-		"KubeRbacProxyImage", cfg.KubeRbacProxyImage)
+		"KubeRbacProxyImage", sanitizeImageReference(cfg.KubeRbacProxyImage))
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -270,6 +271,18 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func sanitizeImageReference(image string) string {
+	if image == "" {
+		return ""
+	}
+	parsed, err := url.Parse(image)
+	if err != nil || parsed.User == nil {
+		return image
+	}
+	parsed.User = url.UserPassword("REDACTED", "REDACTED")
+	return parsed.String()
 }
 
 func getEnvAsStr(name string, defaultVal string) string {
