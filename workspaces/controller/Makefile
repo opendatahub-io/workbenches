@@ -162,7 +162,7 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 
 .PHONY: deploy-gateway
 deploy-gateway: manifests kustomize ## Deploy controller with gateway overlay to the K8s cluster specified in ~/.kube/config.
-	cd manifests/kustomize/overlays/gateway && $(KUSTOMIZE) edit set image workspaces-controller=${IMG}
+	@sed -i 's|^WORKBENCH_CONTROLLER_IMAGE=.*|WORKBENCH_CONTROLLER_IMAGE=${IMG}|' manifests/kustomize/overlays/gateway/params.env
 	$(KUSTOMIZE) build manifests/kustomize/overlays/gateway | $(KUBECTL) apply -f -
 
 .PHONY: undeploy-gateway
