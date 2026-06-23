@@ -45,9 +45,35 @@ docker_build(
 controller_kustomize_path = os.path.join(controller_dir, "manifests/kustomize/overlays/istio")
 manifests = kustomize(controller_kustomize_path, kustomize_bin=kustomize_bin)
 
-# Apply manifests
-# NOTE: allow_duplicates=True because namespace may be defined by multiple overlays
-k8s_yaml(manifests, allow_duplicates=True)
+# Mutate the manifest objects before applying
+controller_objects = decode_yaml_stream(manifests)
+for o in controller_objects:
+    # skip if missing kind/name
+    kind = o.get("kind")
+    name = o.get("metadata", {}).get("name")
+    if not kind or not name:
+        continue
+
+    # modify the controller deployment to disable istio integration
+    #
+    # TODO: remove this mutation once istio integration is supported in dev
+    #
+    if kind == "Deployment" and name == "workspaces-controller":
+        containers = o.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
+        for container in containers:
+            if container.get("name") == "manager":
+                env = container.setdefault("env", [])
+                use_istio_found = False
+                for i, env_var in enumerate(env):
+                    if env_var.get("name") == "USE_ISTIO":
+                        env[i] = {"name": "USE_ISTIO", "value": "false"}
+                        use_istio_found = True
+                        break
+                if not use_istio_found:
+                    env.append({"name": "USE_ISTIO", "value": "false"})
+
+# Apply modified manifests
+k8s_yaml(encode_yaml_stream(controller_objects))
 
 # Manage k8s_yaml resources
 # - Apply Tilt-specific grouping/labels
@@ -124,6 +150,9 @@ k8s_yaml(
 # - Resource dependencies on controller
 k8s_resource(
     "workspaces-backend",
+    port_forwards=[
+      "4000:4000", # api
+    ],
     resource_deps=["workspaces-controller"],
     labels=["backend"],
 )
@@ -234,11 +263,13 @@ if enable_frontend:
     # - Resource dependencies on backend
     k8s_resource(
         "workspaces-frontend",
+        port_forwards=[
+          "9105:8080", # frontend - use host port 9105 to avoid conflict with controller
+        ],
         # wait for backend to be ready to avoid 504 errors on initial page load
         resource_deps=["workspaces-backend"],
         labels=["frontend"],
     )
-
 
 # ============================================================================
 # Istio Gateway Resources
