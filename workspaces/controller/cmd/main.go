@@ -203,7 +203,8 @@ func main() {
 		if indexerErr == nil {
 			break
 		}
-		setupLog.Info("failed to setup field indexers, retrying...", "attempt", i+1, "maxRetries", maxRetries, "error", indexerErr)
+		setupLog.Info("failed to setup field indexers, retrying...",
+			"attempt", i+1, "maxRetries", maxRetries, "error", indexerErr)
 		time.Sleep(time.Duration(i+1) * time.Second) // exponential-ish backoff: 1s, 2s, 3s, 4s, 5s
 	}
 	if indexerErr != nil {

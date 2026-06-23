@@ -385,7 +385,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// If using KubeGateway, add sidecar to StatefulSet BEFORE reconciling
 	if r.Config.UseKubeGateway {
-		sidecar, sidecarVolumes := r.generateKubeRBACProxySidecar(workspace, workspaceKind, service, currentImageConfig.Spec)
+		sidecar, sidecarVolumes := r.generateKubeRBACProxySidecar(workspace, workspaceKind, currentImageConfig.Spec)
 		if sidecar != nil {
 			log.V(1).Info("Adding kube-rbac-proxy sidecar to StatefulSet",
 				"sidecarName", sidecar.Name,
@@ -481,7 +481,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// NOTE: Sidecar is already added to StatefulSet and reconciled above (before UseIstio/UseKubeGateway branches)
 
 		// generate KubeRBACProxyClusterRoleBinding
-		kubeRBACProxyClusterRoleBinding := r.generateKubeRBACProxyClusterRoleBinding(workspace, workspaceKind, service, currentImageConfig.Spec)
+		kubeRBACProxyClusterRoleBinding := r.generateKubeRBACProxyClusterRoleBinding(workspace, workspaceKind)
 
 		// Add finalizer to Workspace for ClusterRoleBinding cleanup (cluster-scoped resources can't use ownerReferences)
 		if !controllerutil.ContainsFinalizer(workspace, WorkspaceFinalizer) {
@@ -520,7 +520,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		// generate KubeRBACProxyConfigMap
-		kubeRBACProxyConfigMap := r.generateKubeRBACProxyConfigMap(workspace, workspaceKind, service, currentImageConfig.Spec)
+		kubeRBACProxyConfigMap := r.generateKubeRBACProxyConfigMap(workspace)
 		if err := ctrl.SetControllerReference(workspace, kubeRBACProxyConfigMap, r.Scheme); err != nil {
 			log.Error(err, "unable to set controller reference on KubeRBACProxyConfigMap")
 			return ctrl.Result{}, err
@@ -555,7 +555,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		// generate KubeRBACProxyService
-		kubeRBACProxyService := r.generateKubeRBACProxyService(workspace, workspaceKind, service, currentImageConfig.Spec)
+		kubeRBACProxyService := r.generateKubeRBACProxyService(workspace)
 		if err := ctrl.SetControllerReference(workspace, kubeRBACProxyService, r.Scheme); err != nil {
 			log.Error(err, "unable to set controller reference on KubeRBACProxyService")
 			return ctrl.Result{}, err
@@ -591,7 +591,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		// generate ReferenceGrant
-		referenceGrant := r.generateKubeGatewayReferenceGrant(workspace, workspaceKind, kubeRBACProxyService, currentImageConfig.Spec)
+		referenceGrant := r.generateKubeGatewayReferenceGrant(workspace, kubeRBACProxyService)
 		if err := ctrl.SetControllerReference(workspace, referenceGrant, r.Scheme); err != nil {
 			log.Error(err, "unable to set controller reference on ReferenceGrant")
 			return ctrl.Result{}, err
@@ -1458,7 +1458,7 @@ func (r *WorkspaceReconciler) generateVirtualService(workspace *kubefloworgv1bet
 // generateKubeGatewayReferenceGrant generates a ReferenceGrant for a Workspace
 // The ReferenceGrant is created in the workspace namespace (where the Service is)
 // and grants access from HTTPRoutes in the controller namespace
-func (r *WorkspaceReconciler) generateKubeGatewayReferenceGrant(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *gatewayv1beta1.ReferenceGrant {
+func (r *WorkspaceReconciler) generateKubeGatewayReferenceGrant(workspace *kubefloworgv1beta1.Workspace, service *corev1.Service) *gatewayv1beta1.ReferenceGrant {
 	referenceGrant := &gatewayv1beta1.ReferenceGrant{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("ws-%s-kube-gateway-reference-grant", workspace.Name),
@@ -1489,7 +1489,7 @@ func (r *WorkspaceReconciler) generateKubeGatewayReferenceGrant(workspace *kubef
 }
 
 // generateKubeRBACProxySidecar generates a KubeRBACProxySidecar container and its required volumes for a Workspace
-func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) (*corev1.Container, []corev1.Volume) {
+func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) (*corev1.Container, []corev1.Volume) {
 
 	currentPodTemplatePortsMap := make(map[kubefloworgv1beta1.PortId]kubefloworgv1beta1.WorkspaceKindPort)
 	for _, port := range workspaceKind.Spec.PodTemplate.Ports {
@@ -1611,7 +1611,7 @@ func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubeflowor
 }
 
 // generateKubeRBACProxyClusterRoleBinding generates a KubeRBACProxyClusterRoleBinding for a Workspace
-func (r *WorkspaceReconciler) generateKubeRBACProxyClusterRoleBinding(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *rbacv1.ClusterRoleBinding {
+func (r *WorkspaceReconciler) generateKubeRBACProxyClusterRoleBinding(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind) *rbacv1.ClusterRoleBinding {
 	kubeRBACProxyClusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("ws-%s-rbac-%s-auth-delegator", workspace.Name, workspace.Namespace),
@@ -1638,7 +1638,7 @@ func (r *WorkspaceReconciler) generateKubeRBACProxyClusterRoleBinding(workspace 
 }
 
 // generateKubeRBACProxyConfigMap generates a KubeRBACProxyConfigMap for a Workspace
-func (r *WorkspaceReconciler) generateKubeRBACProxyConfigMap(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *corev1.ConfigMap {
+func (r *WorkspaceReconciler) generateKubeRBACProxyConfigMap(workspace *kubefloworgv1beta1.Workspace) *corev1.ConfigMap {
 
 	kubeRBACProxyConfigMapData := fmt.Sprintf(`authorization:
   resourceAttributes:
@@ -1666,7 +1666,7 @@ func (r *WorkspaceReconciler) generateKubeRBACProxyConfigMap(workspace *kubeflow
 }
 
 // generateKubeRBACProxyService generates a KubeRBACProxyService for a Workspace
-func (r *WorkspaceReconciler) generateKubeRBACProxyService(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, service *corev1.Service, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) *corev1.Service {
+func (r *WorkspaceReconciler) generateKubeRBACProxyService(workspace *kubefloworgv1beta1.Workspace) *corev1.Service {
 	kubeRBACProxyService := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("ws-%s-kube-rbac-proxy", workspace.Name),

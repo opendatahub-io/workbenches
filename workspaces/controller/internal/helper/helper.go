@@ -17,8 +17,6 @@ limitations under the License.
 package helper
 
 import (
-	"reflect"
-
 	"google.golang.org/protobuf/proto"
 	istiov1 "istio.io/client-go/pkg/apis/networking/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -184,7 +182,7 @@ func CopyHTTPRouteFields(desired *gatewayv1.HTTPRoute, target *gatewayv1.HTTPRou
 	}
 
 	// copy `spec`
-	if !reflect.DeepEqual(target.Spec, desired.Spec) {
+	if !equality.Semantic.DeepEqual(target.Spec, desired.Spec) {
 		target.Spec = desired.Spec
 		requireUpdate = true
 	}
@@ -233,7 +231,7 @@ func CopyReferenceGrantFields(desired *gatewayv1beta1.ReferenceGrant, target *ga
 	}
 
 	// copy `spec`
-	if !reflect.DeepEqual(target.Spec, desired.Spec) {
+	if !equality.Semantic.DeepEqual(target.Spec, desired.Spec) {
 		target.Spec = desired.Spec
 		requireUpdate = true
 	}

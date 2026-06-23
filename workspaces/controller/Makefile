@@ -166,7 +166,7 @@ deploy-gateway: manifests kustomize ## Deploy controller with gateway overlay to
 	@rm -rf manifests/kustomize/.output
 	@mkdir -p manifests/kustomize/.output
 	@cp -r manifests/kustomize/* manifests/kustomize/.output/
-	@sed -i 's|^WORKBENCH_CONTROLLER_IMAGE=.*|WORKBENCH_CONTROLLER_IMAGE=${IMG}|' manifests/kustomize/.output/overlays/gateway/params.env
+	@sed -i "s|^WORKBENCH_CONTROLLER_IMAGE=.*|WORKBENCH_CONTROLLER_IMAGE=${IMG}|" manifests/kustomize/.output/overlays/gateway/params.env
 	@$(KUSTOMIZE) build manifests/kustomize/.output/overlays/gateway | $(KUBECTL) apply -f -
 
 .PHONY: undeploy-gateway
