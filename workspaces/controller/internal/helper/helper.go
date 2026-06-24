@@ -28,26 +28,18 @@ import (
 
 // copyLabelFields copies metadata.labels from desired to target, returning the updated map and whether an update is required.
 func copyLabelFields(desiredLabels map[string]string, targetLabels map[string]string) (map[string]string, bool) {
-	requireUpdate := false
-
-	for k, v := range targetLabels {
-		if desiredLabels[k] != v {
-			requireUpdate = true
-		}
+	if !equality.Semantic.DeepEqual(desiredLabels, targetLabels) {
+		return desiredLabels, true
 	}
-	return desiredLabels, requireUpdate
+	return desiredLabels, false
 }
 
 // copyAnnotationFields copies metadata.annotations from desired to target, returning the updated map and whether an update is required.
 func copyAnnotationFields(desiredAnnotations map[string]string, targetAnnotations map[string]string) (map[string]string, bool) {
-	requireUpdate := false
-
-	for k, v := range targetAnnotations {
-		if desiredAnnotations[k] != v {
-			requireUpdate = true
-		}
+	if !equality.Semantic.DeepEqual(desiredAnnotations, targetAnnotations) {
+		return desiredAnnotations, true
 	}
-	return desiredAnnotations, requireUpdate
+	return desiredAnnotations, false
 }
 
 // CopyStatefulSetFields updates a target StatefulSet with the fields from a desired StatefulSet, returning true if an update is required.
