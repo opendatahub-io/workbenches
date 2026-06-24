@@ -171,7 +171,11 @@ deploy-gateway: manifests kustomize ## Deploy controller with gateway overlay to
 
 .PHONY: undeploy-gateway
 undeploy-gateway: kustomize ## Undeploy controller (gateway overlay) from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build manifests/kustomize/overlays/gateway | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+	@echo "Copying kustomize directory structure to .output..."
+	@rm -rf manifests/kustomize/.output
+	@mkdir -p manifests/kustomize/.output
+	@cp -r manifests/kustomize/* manifests/kustomize/.output/
+	@$(KUSTOMIZE) build manifests/kustomize/.output/overlays/gateway | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 

@@ -337,7 +337,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Filter out kube-rbac-proxy services from the count
-	var workspaceServices []corev1.Service
+	workspaceServices := make([]corev1.Service, 0, len(ownedServices.Items))
 	for _, svc := range ownedServices.Items {
 		if component, ok := svc.Labels["app.kubernetes.io/component"]; ok && component == "kube-rbac-proxy" {
 			continue
