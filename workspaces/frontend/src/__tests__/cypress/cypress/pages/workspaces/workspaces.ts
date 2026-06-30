@@ -153,7 +153,7 @@ class Workspaces {
   }
 
   findAction(args: {
-    action: 'delete' | 'start' | 'stop' | 'restart' | 'viewDetails' | 'edit';
+    action: 'delete' | 'start' | 'stop' | 'viewDetails' | 'edit';
     workspaceName: string;
   }) {
     this.openWorkspaceActionDropdown(args.workspaceName);
@@ -493,6 +493,10 @@ class StartModal {
     return this.find().findByTestId('start-button');
   }
 
+  findUpdateAndStartButton() {
+    return this.find().findByTestId('update-and-start-button');
+  }
+
   findCancelButton() {
     return this.find().findByTestId('cancel-button');
   }
@@ -521,6 +525,10 @@ class StopModal {
 
   findStopButton() {
     return this.find().findByTestId('stop-button');
+  }
+
+  findUpdateAndStopButton() {
+    return this.find().findByTestId('update-and-stop-button');
   }
 
   findCancelButton() {
