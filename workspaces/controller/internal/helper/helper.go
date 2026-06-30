@@ -22,30 +22,24 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 )
 
 // copyLabelFields copies metadata.labels from desired to target, returning the updated map and whether an update is required.
 func copyLabelFields(desiredLabels map[string]string, targetLabels map[string]string) (map[string]string, bool) {
-	requireUpdate := false
-
-	for k, v := range targetLabels {
-		if desiredLabels[k] != v {
-			requireUpdate = true
-		}
+	if !equality.Semantic.DeepEqual(desiredLabels, targetLabels) {
+		return desiredLabels, true
 	}
-	return desiredLabels, requireUpdate
+	return desiredLabels, false
 }
 
 // copyAnnotationFields copies metadata.annotations from desired to target, returning the updated map and whether an update is required.
 func copyAnnotationFields(desiredAnnotations map[string]string, targetAnnotations map[string]string) (map[string]string, bool) {
-	requireUpdate := false
-
-	for k, v := range targetAnnotations {
-		if desiredAnnotations[k] != v {
-			requireUpdate = true
-		}
+	if !equality.Semantic.DeepEqual(desiredAnnotations, targetAnnotations) {
+		return desiredAnnotations, true
 	}
-	return desiredAnnotations, requireUpdate
+	return desiredAnnotations, false
 }
 
 // CopyStatefulSetFields updates a target StatefulSet with the fields from a desired StatefulSet, returning true if an update is required.
@@ -156,6 +150,81 @@ func CopyVirtualServiceFields(desired *istiov1.VirtualService, target *istiov1.V
 	//       and messages with the same value are not considered equal with reflect.DeepEqual
 	if !proto.Equal(&target.Spec, &desired.Spec) {
 		target.Spec = *desired.Spec.DeepCopy()
+		requireUpdate = true
+	}
+
+	return requireUpdate
+}
+
+// CopyHTTPRouteFields updates a target HTTPRoute with the fields from a desired HTTPRoute, returning true if an update is required.
+func CopyHTTPRouteFields(desired *gatewayv1.HTTPRoute, target *gatewayv1.HTTPRoute) bool {
+	requireUpdate := false
+
+	// copy `metadata.labels`
+	var updated bool
+	target.Labels, updated = copyLabelFields(desired.Labels, target.Labels)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `metadata.annotations`
+	target.Annotations, updated = copyAnnotationFields(desired.Annotations, target.Annotations)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `spec`
+	if !equality.Semantic.DeepEqual(target.Spec, desired.Spec) {
+		target.Spec = desired.Spec
+		requireUpdate = true
+	}
+
+	return requireUpdate
+}
+
+// CopyConfigMapFields updates a target ConfigMap with the fields from a desired ConfigMap, returning true if an update is required.
+func CopyConfigMapFields(desired *corev1.ConfigMap, target *corev1.ConfigMap) bool {
+	requireUpdate := false
+
+	var updated bool
+	target.Labels, updated = copyLabelFields(desired.Labels, target.Labels)
+	if updated {
+		requireUpdate = true
+	}
+
+	target.Annotations, updated = copyAnnotationFields(desired.Annotations, target.Annotations)
+	if updated {
+		requireUpdate = true
+	}
+
+	if !equality.Semantic.DeepEqual(target.Data, desired.Data) {
+		target.Data = desired.Data
+		requireUpdate = true
+	}
+
+	return requireUpdate
+}
+
+// CopyReferenceGrantFields updates a target ReferenceGrant with the fields from a desired ReferenceGrant, returning true if an update is required.
+func CopyReferenceGrantFields(desired *gatewayv1beta1.ReferenceGrant, target *gatewayv1beta1.ReferenceGrant) bool {
+	requireUpdate := false
+
+	// copy `metadata.labels`
+	var updated bool
+	target.Labels, updated = copyLabelFields(desired.Labels, target.Labels)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `metadata.annotations`
+	target.Annotations, updated = copyAnnotationFields(desired.Annotations, target.Annotations)
+	if updated {
+		requireUpdate = true
+	}
+
+	// copy `spec`
+	if !equality.Semantic.DeepEqual(target.Spec, desired.Spec) {
+		target.Spec = desired.Spec
 		requireUpdate = true
 	}
 
