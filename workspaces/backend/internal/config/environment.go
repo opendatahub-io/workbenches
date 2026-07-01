@@ -32,4 +32,6 @@ type EnvConfig struct {
 	SwaggerHost     string
 	SwaggerBasePath string
 	SwaggerScheme   string
+	// StaticAssetsDir is the directory containing frontend static assets
+	StaticAssetsDir string
 }

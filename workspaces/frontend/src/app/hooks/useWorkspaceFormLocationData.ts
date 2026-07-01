@@ -1,3 +1,4 @@
+/* eslint-disable @cspell/spellchecker */
 import { useNamespaceSelectorWrapper } from '~/app/hooks/useNamespaceSelectorWrapper';
 import { useCurrentRouteKey } from '~/app/hooks/useCurrentRouteKey';
 import { useTypedLocation } from '~/app/routerHelper';

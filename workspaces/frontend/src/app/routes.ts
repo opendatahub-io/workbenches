@@ -1,3 +1,4 @@
+/* eslint-disable @cspell/spellchecker */
 export const AppRoutePaths = {
   root: '/',
   workspaces: '/workspaces',
