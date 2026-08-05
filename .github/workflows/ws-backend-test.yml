@@ -85,3 +85,11 @@ jobs:
       - name: Run unit tests
         working-directory: workspaces/backend
         run: make test
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: "!cancelled()"
+        with:
+          files: workspaces/backend/cover.out
+          flags: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
