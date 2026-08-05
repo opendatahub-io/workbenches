@@ -71,7 +71,7 @@ jobs:
           npm run test:cypress-ci
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         if: "!cancelled() && steps.run-tests.outcome != 'skipped'"
         with:
           files: workspaces/frontend/jest-coverage/lcov.info
