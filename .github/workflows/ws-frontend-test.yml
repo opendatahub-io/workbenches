@@ -71,6 +71,18 @@ jobs:
           npm run test:jest:coverage
           npm run test:cypress-ci
 
+      - name: Check if there are uncommitted file changes
+        working-directory: workspaces/frontend
+        run: |
+          clean=$(git status --porcelain)
+          if [[ -z "$clean" ]]; then
+              echo "Empty git status --porcelain: $clean"
+          else
+              echo "Uncommitted file changes detected: $clean"
+              git diff
+              exit 1
+          fi
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         if: "!cancelled() && steps.run-tests.outcome != 'skipped'"
@@ -101,18 +113,6 @@ jobs:
         with:
           name: cypress-videos
           path: workspaces/frontend/src/__tests__/cypress/results/mocked/videos
-
-      - name: Check if there are uncommitted file changes
-        working-directory: workspaces/frontend
-        run: |
-          clean=$(git status --porcelain)
-          if [[ -z "$clean" ]]; then
-              echo "Empty git status --porcelain: $clean"
-          else
-              echo "Uncommitted file changes detected: $clean"
-              git diff
-              exit 1
-          fi
 
   image-build:
     uses: ./.github/workflows/ws-build-image.yml
