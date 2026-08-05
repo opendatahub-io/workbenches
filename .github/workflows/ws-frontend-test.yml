@@ -11,6 +11,7 @@ on:
       - v*-branch
   pull_request:
     paths:
+      - .github/workflows/ws-frontend-test.yml
       - releasing/version/VERSION
       - workspaces/frontend/**
     branches:

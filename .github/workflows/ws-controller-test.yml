@@ -11,6 +11,7 @@ on:
       - v*-branch
   pull_request:
     paths:
+      - .github/workflows/ws-controller-test.yml
       - releasing/version/VERSION
       - workspaces/controller/**
       ## NOTE: we also test on changes to the backend as the backend depends on the controller
