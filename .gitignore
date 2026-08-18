@@ -41,3 +41,11 @@ Sessionx.vim
 .AppleDouble
 .LSOverride
 ._*
+
+AGENTS.md
+CLAUDE.md
+workspaces/backend/AGENTS.md
+workspaces/controller/AGENTS.md
+workspaces/frontend/AGENTS.md
+workspaces/frontend/src/__tests__/cypress/AGENTS.md
+.agents
