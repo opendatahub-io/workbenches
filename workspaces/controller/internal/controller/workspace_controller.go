@@ -85,6 +85,10 @@ const (
 	workspaceKubeRbacProxyTLSCertsMountPath  = "/etc/tls/private"
 	workspaceKubeRbacProxyTLSCertFilePath    = "/etc/tls/private/tls.crt"
 	workspaceKubeRbacProxyTLSKeyFilePath     = "/etc/tls/private/tls.key"
+	// requeue delay when the local cache is known to be stale (fixed delay,
+	// since a stale cache is not write contention, so no exponential backoff
+	// is needed)
+	requeueAfterStaleCache = 250 * time.Millisecond
 
 	// lengths for resource names
 	generateNameSuffixLength    = 6
@@ -273,7 +277,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if err := r.Update(ctx, workspaceKind); err != nil {
 				if apierrors.IsConflict(err) {
 					log.V(2).Info("update conflict while adding finalizer to WorkspaceKind, will requeue")
-					return ctrl.Result{Requeue: true}, nil
+					return ctrl.Result{}, err
 				}
 				log.Error(err, "unable to add finalizer to WorkspaceKind")
 				return ctrl.Result{}, err
@@ -370,9 +374,10 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				existingServiceAccount := &corev1.ServiceAccount{}
 				if getErr := r.Get(ctx, client.ObjectKeyFromObject(serviceAccount), existingServiceAccount); getErr != nil {
 					if apierrors.IsNotFound(getErr) {
-						// the cache is stale, the watch on owned ServiceAccounts will requeue us
+						// the cache is stale; requeue after a short delay instead of relying on the
+						// owned-object watch, which will not fire if the ServiceAccount is owned by another controller
 						log.V(2).Info("ServiceAccount already exists but is not in the cache yet, will requeue")
-						return ctrl.Result{Requeue: true}, nil
+						return ctrl.Result{RequeueAfter: requeueAfterStaleCache}, nil
 					}
 					log.Error(getErr, "unable to get existing ServiceAccount")
 					return ctrl.Result{}, getErr
@@ -384,7 +389,9 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 						fmt.Sprintf(stateMsgErrorServiceAccountNotOwned, existingServiceAccount.Name),
 					)
 				}
-				return ctrl.Result{Requeue: true}, nil
+				// the cache is stale (the owner index did not return the ServiceAccount), requeue after
+				// a short delay so we pick it up once the cache catches up
+				return ctrl.Result{RequeueAfter: requeueAfterStaleCache}, nil
 			}
 			log.Error(err, "unable to create ServiceAccount")
 			return ctrl.Result{}, err
@@ -398,7 +405,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if err := r.Update(ctx, foundServiceAccount); err != nil {
 				if apierrors.IsConflict(err) {
 					log.V(2).Info("update conflict while updating ServiceAccount, will requeue")
-					return ctrl.Result{Requeue: true}, nil
+					return ctrl.Result{}, err
 				}
 				log.Error(err, "unable to update ServiceAccount")
 				return ctrl.Result{}, err
@@ -541,7 +548,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if err := r.Update(ctx, foundService); err != nil {
 				if apierrors.IsConflict(err) {
 					log.V(2).Info("update conflict while updating Service, will requeue")
-					return ctrl.Result{Requeue: true}, nil
+					return ctrl.Result{}, err
 				}
 				log.Error(err, "unable to update Service")
 				return ctrl.Result{}, err
@@ -632,7 +639,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				if err := r.Update(ctx, foundVirtualService); err != nil {
 					if apierrors.IsConflict(err) {
 						log.V(2).Info("update conflict while updating VirtualService, will requeue")
-						return ctrl.Result{Requeue: true}, nil
+						return ctrl.Result{}, err
 					}
 					log.Error(err, "unable to update VirtualService")
 					return ctrl.Result{}, err
@@ -860,9 +867,6 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// reconcile RoleBindings
 	if err := r.reconcileRoleBindings(ctx, log, workspace, workspaceKind, serviceAccountName); err != nil {
 		// NOTE: `reconcileRoleBindings()` has already logged the cause, including the conflict case
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
 		return ctrl.Result{}, err
 	}
 
@@ -901,7 +905,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if err := r.Status().Update(ctx, workspace); err != nil {
 			if apierrors.IsConflict(err) {
 				log.V(2).Info("update conflict while updating Workspace status, will requeue")
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{}, err
 			}
 			log.Error(err, "unable to update Workspace status")
 			return ctrl.Result{}, err
@@ -920,7 +924,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if err := r.Patch(ctx, workspace, client.MergeFrom(originalWorkspace)); err != nil {
 			if apierrors.IsConflict(err) {
 				log.V(2).Info("update conflict while pausing Workspace, will requeue")
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{}, err
 			}
 			log.Error(err, "unable to pause Workspace")
 			return ctrl.Result{}, err
@@ -935,27 +939,16 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 // mergeReconcileResult combines two reconcile results, preferring the sooner requeue.
 func mergeReconcileResult(a, b ctrl.Result) ctrl.Result {
-	aDelay := requeueDelay(a)
-	bDelay := requeueDelay(b)
 	switch {
-	case aDelay > 0 && (bDelay <= 0 || aDelay <= bDelay):
-		return a
-	case bDelay > 0:
+	case a.RequeueAfter <= 0:
 		return b
-	default:
+	case b.RequeueAfter <= 0:
 		return a
+	case a.RequeueAfter <= b.RequeueAfter:
+		return a
+	default:
+		return b
 	}
-}
-
-// requeueDelay returns how soon a result wants to requeue. Zero means "do not requeue".
-func requeueDelay(r ctrl.Result) time.Duration {
-	if r.RequeueAfter > 0 {
-		return r.RequeueAfter
-	}
-	if r.Requeue { //nolint:staticcheck // Result.Requeue is deprecated in controller-runtime v0.22
-		return time.Nanosecond
-	}
-	return 0
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -1023,7 +1016,7 @@ func (r *WorkspaceReconciler) updateWorkspaceState(ctx context.Context, log logr
 		if err := r.Status().Update(ctx, workspace); err != nil {
 			if apierrors.IsConflict(err) {
 				log.V(2).Info("update conflict while updating Workspace status, will requeue")
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{}, err
 			}
 			log.Error(err, "unable to update Workspace status")
 			return ctrl.Result{}, err
@@ -1395,7 +1388,7 @@ func (r *WorkspaceReconciler) reconcileRoleBindings(ctx context.Context, log log
 }
 
 // generateStatefulSet generates a StatefulSet for a Workspace
-func generateStatefulSet(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec, podConfigSpec kubefloworgv1beta1.PodConfigSpec, serviceAccountName string) (*appsv1.StatefulSet, error) {
+func generateStatefulSet(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec, podConfigSpec kubefloworgv1beta1.PodConfigSpec, serviceAccountName string) (*appsv1.StatefulSet, error) { //nolint:gocyclo
 	// generate name prefix
 	namePrefix := generateNamePrefix(workspace.Name, maxStatefulSetNameLength)
 
@@ -1416,6 +1409,15 @@ func generateStatefulSet(workspace *kubefloworgv1beta1.Workspace, workspaceKind 
 	if workspace.Spec.PodTemplate.PodMetadata != nil {
 		maps.Copy(podAnnotations, workspace.Spec.PodTemplate.PodMetadata.Annotations)
 		maps.Copy(podLabels, workspace.Spec.PodTemplate.PodMetadata.Labels)
+	}
+
+	// generate statefulset metadata
+	// NOTE: statefulset metadata is only configurable at the WorkspaceKind level
+	stsAnnotations := make(map[string]string)
+	stsLabels := make(map[string]string)
+	if workspaceKind.Spec.PodTemplate.StatefulSetMetadata != nil {
+		maps.Copy(stsAnnotations, workspaceKind.Spec.PodTemplate.StatefulSetMetadata.Annotations)
+		maps.Copy(stsLabels, workspaceKind.Spec.PodTemplate.StatefulSetMetadata.Labels)
 	}
 
 	// generate container imagePullPolicy
@@ -1473,6 +1475,14 @@ func generateStatefulSet(workspace *kubefloworgv1beta1.Workspace, workspaceKind 
 	containerResources := corev1.ResourceRequirements{}
 	if podConfigSpec.Resources != nil {
 		containerResources = *podConfigSpec.Resources
+	}
+
+	// generate scheduler name
+	// NOTE: the schedulerName from the podConfig takes precedence over the WorkspaceKind
+	//       an empty value causes the Kubernetes API server to apply its own default
+	schedulerName := ptr.Deref(workspaceKind.Spec.PodTemplate.SchedulerName, "")
+	if podConfigSpec.SchedulerName != nil {
+		schedulerName = *podConfigSpec.SchedulerName
 	}
 
 	// generate container probes
@@ -1610,9 +1620,14 @@ func generateStatefulSet(workspace *kubefloworgv1beta1.Workspace, workspaceKind 
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: namePrefix,
 			Namespace:    workspace.Namespace,
-			Labels: map[string]string{
-				workspaceNameLabel: workspace.Name,
-			},
+			Annotations:  stsAnnotations,
+			// NOTE: the controller-managed labels take precedence over the admin-provided ones
+			Labels: labels.Merge(
+				stsLabels,
+				map[string]string{
+					workspaceNameLabel: workspace.Name,
+				},
+			),
 		},
 		//
 		// NOTE: if you add new fields, ensure they are reflected in `helper.CopyStatefulSetFields()`
@@ -1654,6 +1669,7 @@ func generateStatefulSet(workspace *kubefloworgv1beta1.Workspace, workspaceKind 
 						},
 					},
 					NodeSelector:       podConfigSpec.NodeSelector,
+					SchedulerName:      schedulerName,
 					SecurityContext:    workspaceKind.Spec.PodTemplate.SecurityContext,
 					ServiceAccountName: serviceAccountName,
 					Tolerations:        podConfigSpec.Tolerations,
