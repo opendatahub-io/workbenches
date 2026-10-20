@@ -100,10 +100,6 @@ const (
 	// has_activity: false test configs
 	hasActivityFalseWorkspaceKindName = "jupyterlab-has-activity-false"
 	hasActivityFalseWorkspaceName     = "jupyterlab-workspace-has-activity-false"
-
-	// probe test configs
-	probeWorkspaceKindName = "jupyterlab-probe"
-	probeWorkspaceName     = "jupyterlab-workspace-probe"
 )
 
 var (
