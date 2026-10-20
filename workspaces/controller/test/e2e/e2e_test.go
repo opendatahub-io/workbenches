@@ -55,6 +55,13 @@ const (
 	stsMetadataAnnotationKey   = "my-workspace-kind-sts-annotation"
 	stsMetadataAnnotationValue = "my-value"
 
+	// serviceAccount.metadata configured on the sample WorkspaceKind
+	//  - see manifests/kustomize/samples/jupyterlab_v1beta1_workspacekind.yaml
+	saMetadataLabelKey        = "my-workspace-kind-sa-label"
+	saMetadataLabelValue      = "my-value"
+	saMetadataAnnotationKey   = "my-workspace-kind-sa-annotation"
+	saMetadataAnnotationValue = "my-value"
+
 	// curl image
 	curlImage = "curlimages/curl:8.9.1"
 
@@ -295,7 +302,7 @@ var _ = Describe("controller", Ordered, func() {
 			verifyWorkspacePod := func(g Gomega) {
 				// Get workspace pod name
 				cmd := exec.Command("kubectl", "get", "pods",
-					"-l", fmt.Sprintf("notebooks.kubeflow.org/workspace-name=%s", workspaceName),
+					"-l", fmt.Sprintf("workspaces.kubeflow.org/workspace-name=%s", workspaceName),
 					"-n", workspaceNamespace,
 					"-o", "go-template={{ range .items }}"+
 						"{{ if not .metadata.deletionTimestamp }}"+
@@ -328,7 +335,7 @@ var _ = Describe("controller", Ordered, func() {
 			getServiceName := func(g Gomega) {
 				// Get the workspace service name
 				cmd := exec.Command("kubectl", "get", "services",
-					"-l", fmt.Sprintf("notebooks.kubeflow.org/workspace-name=%s", workspaceName),
+					"-l", fmt.Sprintf("workspaces.kubeflow.org/workspace-name=%s", workspaceName),
 					"-n", workspaceNamespace,
 					"-o", "go-template={{ range .items }}"+
 						"{{ if not .metadata.deletionTimestamp }}"+
@@ -366,7 +373,7 @@ var _ = Describe("controller", Ordered, func() {
 			var workspaceVirtualServiceName string
 			verifyWorkspaceVirtualService := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "virtualservices",
-					"-l", fmt.Sprintf("notebooks.kubeflow.org/workspace-name=%s", workspaceName),
+					"-l", fmt.Sprintf("workspaces.kubeflow.org/workspace-name=%s", workspaceName),
 					"-n", workspaceNamespace,
 					"-o", "go-template={{ range .items }}"+
 						"{{ if not .metadata.deletionTimestamp }}"+
@@ -388,7 +395,7 @@ var _ = Describe("controller", Ordered, func() {
 			// the sample WorkspaceKind sets spec.podTemplate.statefulSetMetadata, which the controller
 			// applies to the generated StatefulSet's own metadata (alongside the workspace-name label)
 			verifyStatefulSetMetadata := func(g Gomega) {
-				stsSelector := fmt.Sprintf("notebooks.kubeflow.org/workspace-name=%s", workspaceName)
+				stsSelector := fmt.Sprintf("workspaces.kubeflow.org/workspace-name=%s", workspaceName)
 
 				cmd := exec.Command("kubectl", "get", "statefulsets",
 					"-l", stsSelector,
@@ -435,6 +442,56 @@ var _ = Describe("controller", Ordered, func() {
 					"expected the rejection to mention the invalid label key")
 			}
 			Eventually(rejectInvalidStatefulSetMetadataLabel, timeout, interval).Should(Succeed())
+
+			By("validating that the ServiceAccount carries the serviceAccount.metadata from the WorkspaceKind")
+			// the sample WorkspaceKind sets spec.podTemplate.serviceAccount.metadata, which the controller
+			// merges onto the generated ServiceAccount's own metadata (alongside the workspace-name label)
+			verifyServiceAccountMetadata := func(g Gomega) {
+				saSelector := fmt.Sprintf("workspaces.kubeflow.org/workspace-name=%s", workspaceName)
+
+				cmd := exec.Command("kubectl", "get", "serviceaccounts",
+					"-l", saSelector,
+					"-n", workspaceNamespace,
+					"-o", fmt.Sprintf("jsonpath={.items[0].metadata.labels['%s']}", saMetadataLabelKey),
+				)
+				labelValue, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(labelValue).To(Equal(saMetadataLabelValue), "expected serviceAccount.metadata label on the ServiceAccount")
+
+				cmd = exec.Command("kubectl", "get", "serviceaccounts",
+					"-l", saSelector,
+					"-n", workspaceNamespace,
+					"-o", fmt.Sprintf("jsonpath={.items[0].metadata.annotations['%s']}", saMetadataAnnotationKey),
+				)
+				annotationValue, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(annotationValue).To(
+					Equal(saMetadataAnnotationValue),
+					"expected serviceAccount.metadata annotation on the ServiceAccount",
+				)
+			}
+			Eventually(verifyServiceAccountMetadata, timeout, interval).Should(Succeed())
+
+			By("ensuring invalid serviceAccount.metadata labels are rejected by the WorkspaceKind webhook")
+			rejectInvalidServiceAccountMetadataLabel := func(g Gomega) {
+				invalidKey := "!bad-key!"
+				labelsPath := "/spec/podTemplate/serviceAccount/metadata/labels"
+				patch := fmt.Sprintf(
+					`[{"op": "replace", "path": %q, "value": {%q: "value"}}]`,
+					labelsPath, invalidKey,
+				)
+				cmd := exec.Command("kubectl", "patch", "workspacekind", workspaceKindName,
+					"--type=json",
+					"-p", patch,
+				)
+				output, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred(), "expected the webhook to reject the invalid serviceAccount.metadata label")
+				g.Expect(output).To(ContainSubstring("spec.podTemplate.serviceAccount.metadata.labels"),
+					"expected the rejection to point at spec.podTemplate.serviceAccount.metadata.labels")
+				g.Expect(output).To(ContainSubstring(invalidKey),
+					"expected the rejection to mention the invalid label key")
+			}
+			Eventually(rejectInvalidServiceAccountMetadataLabel, timeout, interval).Should(Succeed())
 
 			By("ensuring in-use imageConfig values cannot be removed from WorkspaceKind")
 			removeInUseImageConfig := func() error {
@@ -491,6 +548,175 @@ var _ = Describe("controller", Ordered, func() {
 			By("deleting an unused WorkspaceKind")
 			deleteWorkspaceKind := func() error {
 				cmd := exec.Command("kubectl", "delete", "workspacekind", workspaceKindName)
+				_, err := utils.Run(cmd)
+				return err
+			}
+			Eventually(deleteWorkspaceKind, timeout, interval).Should(Succeed())
+		})
+
+		It("should re-adopt existing owned resources across CRD version skew", func() {
+
+			By("creating an instance of WorkspaceKind")
+			createWorkspaceKindSample := func() error {
+				cmd := exec.Command("kubectl", "apply",
+					"-f", filepath.Join(projectDir, "manifests/kustomize/samples/jupyterlab_v1beta1_workspacekind.yaml"),
+				)
+				_, err := utils.Run(cmd)
+				return err
+			}
+			Eventually(createWorkspaceKindSample, timeout, interval).Should(Succeed())
+
+			By("creating an instance of Workspace")
+			createWorkspaceSample := func() error {
+				cmd := exec.Command("kubectl", "apply",
+					"-f", filepath.Join(projectDir, "manifests/kustomize/samples/jupyterlab_v1beta1_workspace.yaml"),
+					"-n", workspaceNamespace,
+				)
+				_, err := utils.Run(cmd)
+				return err
+			}
+			Eventually(createWorkspaceSample, timeout, interval).Should(Succeed())
+
+			By("waiting for the workspace to reach 'Running' state and recording its UID")
+			var currentWorkspaceUID string
+			verifyRunning := func(g Gomega) error {
+				cmd := exec.Command("kubectl", "get", "workspaces",
+					workspaceName,
+					"-n", workspaceNamespace,
+					"-o", "jsonpath={.status.state}",
+				)
+				statusState, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				if statusState != string(kubefloworgv1beta1.WorkspaceStateRunning) {
+					return fmt.Errorf("workspace not running yet, state: %s", statusState)
+				}
+				cmd = exec.Command("kubectl", "get", "workspaces",
+					workspaceName,
+					"-n", workspaceNamespace,
+					"-o", "jsonpath={.metadata.uid}",
+				)
+				uidOutput, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				currentWorkspaceUID = strings.TrimSpace(uidOutput)
+				return nil
+			}
+			Eventually(verifyRunning, timeout, interval).Should(Succeed())
+			Expect(currentWorkspaceUID).NotTo(BeEmpty())
+
+			By("recording the existing StatefulSet and Service names")
+			var statefulSetName, serviceName string
+			stsSelector := fmt.Sprintf("workspaces.kubeflow.org/workspace-name=%s", workspaceName)
+			cmd := exec.Command("kubectl", "get", "statefulsets",
+				"-l", stsSelector,
+				"-n", workspaceNamespace,
+				"-o", "jsonpath={.items[0].metadata.name}",
+			)
+			stsOutput, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			statefulSetName = strings.TrimSpace(stsOutput)
+			Expect(statefulSetName).NotTo(BeEmpty())
+
+			cmd = exec.Command("kubectl", "get", "services",
+				"-l", stsSelector,
+				"-n", workspaceNamespace,
+				"-o", "jsonpath={.items[0].metadata.name}",
+			)
+			svcOutput, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			serviceName = strings.TrimSpace(svcOutput)
+			Expect(serviceName).NotTo(BeEmpty())
+
+			By("simulating an older API version controller reference on the StatefulSet and Service")
+			// NOTE: We simulate version skew (e.g. CRD promotion from v1alpha1 to v1beta1) where
+			//       existing resources retain an older APIVersion in their ownerReferences.
+			//       The owner index matches by API group and ReplaceWorkspaceAsController updates
+			//       the controller reference to the current APIVersion.
+			patchOlderAPIVersion := func() error {
+				ownerRefPatch := fmt.Sprintf(
+					`{"metadata":{"ownerReferences":[`+
+						`{"apiVersion":"kubeflow.org/v1alpha1","kind":"Workspace",`+
+						`"name":%q,"uid":%q,"controller":true,"blockOwnerDeletion":true}`+
+						`]}}`,
+					workspaceName, currentWorkspaceUID,
+				)
+				cmd := exec.Command("kubectl", "patch", "statefulset", statefulSetName,
+					"-n", workspaceNamespace, "--type=merge", "-p", ownerRefPatch)
+				if _, err := utils.Run(cmd); err != nil {
+					return err
+				}
+				cmd = exec.Command("kubectl", "patch", "service", serviceName,
+					"-n", workspaceNamespace, "--type=merge", "-p", ownerRefPatch)
+				_, err := utils.Run(cmd)
+				return err
+			}
+			Expect(patchOlderAPIVersion()).To(Succeed())
+
+			By("triggering a reconcile of the Workspace")
+			triggerReconcile := func() error {
+				cmd := exec.Command("kubectl", "annotate", "workspace", workspaceName,
+					"-n", workspaceNamespace,
+					fmt.Sprintf("test.reconcile=%d", time.Now().UnixNano()),
+					"--overwrite",
+				)
+				_, err := utils.Run(cmd)
+				return err
+			}
+			Eventually(triggerReconcile, timeout, interval).Should(Succeed())
+
+			By("validating that the StatefulSet controller reference is updated to current APIVersion")
+			verifyStsReAdopted := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "statefulset", statefulSetName,
+					"-n", workspaceNamespace,
+					"-o", "jsonpath={.metadata.ownerReferences[?(@.controller==true)].apiVersion}",
+				)
+				ctrlAPIVersion, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(ctrlAPIVersion)).To(Equal(kubefloworgv1beta1.GroupVersion.String()))
+			}
+			Eventually(verifyStsReAdopted, timeout, interval).Should(Succeed())
+
+			By("validating that the Service controller reference is updated to current APIVersion")
+			verifySvcReAdopted := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "service", serviceName,
+					"-n", workspaceNamespace,
+					"-o", "jsonpath={.metadata.ownerReferences[?(@.controller==true)].apiVersion}",
+				)
+				ctrlAPIVersion, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(ctrlAPIVersion)).To(Equal(kubefloworgv1beta1.GroupVersion.String()))
+			}
+			Eventually(verifySvcReAdopted, timeout, interval).Should(Succeed())
+
+			By("validating that the Workspace remains in 'Running' state")
+			Eventually(verifyRunning, timeout, interval).Should(Succeed())
+
+			By("deleting the Workspace (cascading delete cleans up owned resources)")
+			deleteWorkspace := func() error {
+				cmd := exec.Command("kubectl", "delete", "workspace", workspaceName,
+					"-n", workspaceNamespace, "--ignore-not-found=true")
+				_, err := utils.Run(cmd)
+				return err
+			}
+			Eventually(deleteWorkspace, timeout, interval).Should(Succeed())
+
+			By("verifying that the StatefulSet and Service are deleted as a result of the Workspace deletion")
+			verifyOwnedResourcesDeleted := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "statefulset", statefulSetName, "-n", workspaceNamespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred(), "expected StatefulSet to be deleted")
+				g.Expect(output).To(ContainSubstring("not found"))
+
+				cmd = exec.Command("kubectl", "get", "service", serviceName, "-n", workspaceNamespace)
+				output, err = utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred(), "expected Service to be deleted")
+				g.Expect(output).To(ContainSubstring("not found"))
+			}
+			Eventually(verifyOwnedResourcesDeleted, timeout, interval).Should(Succeed())
+
+			By("deleting the WorkspaceKind")
+			deleteWorkspaceKind := func() error {
+				cmd := exec.Command("kubectl", "delete", "workspacekind", workspaceKindName,
+					"--ignore-not-found=true")
 				_, err := utils.Run(cmd)
 				return err
 			}
@@ -611,10 +837,10 @@ var _ = Describe("controller", Ordered, func() {
 			// - secondsSinceActive=16 is the minimum allowed by the CRD validation
 			// - minRunningSeconds=60 ensures the Workspace stays Running long enough for the
 			//   test to observe its Running state and status before pausing triggers
-			// - an empty match makes this a catch-all rule that applies to all Workspaces
+			// - an empty match list makes this a catch-all rule that applies to all Workspaces
 			rulesPatch := `[` +
 				`{"op":"replace","path":"/spec/activityRules","value":[` +
-				`{"config":{"secondsSinceActive":16,"minRunningSeconds":60},"match":{},"effect":{"pauseWorkspace":true}}` +
+				`{"config":{"secondsSinceActive":16,"minRunningSeconds":60},"match":[],"effect":{"pauseWorkspace":true}}` +
 				`]}]`
 			patchRules := func() error {
 				cmd := exec.Command("kubectl", "patch", "workspacekind", activityWorkspaceKindName,
@@ -789,9 +1015,9 @@ var _ = Describe("controller", Ordered, func() {
 			// - second rule: catch-all with pauseWorkspace: true
 			rulesPatch := `[` +
 				`{"op":"replace","path":"/spec/activityRules","value":[` +
-				`{"config":{"secondsSinceActive":16},"match":{"matchNamespace":` +
-				`{"selector":{"matchLabels":{"exempt":"true"}}}},"effect":{"pauseWorkspace":false}},` +
-				`{"config":{"secondsSinceActive":16},"match":{},"effect":{"pauseWorkspace":true}}` +
+				`{"config":{"secondsSinceActive":16},"match":[{"matchNamespace":` +
+				`{"selector":{"matchLabels":{"exempt":"true"}}}}],"effect":{"pauseWorkspace":false}},` +
+				`{"config":{"secondsSinceActive":16},"match":[],"effect":{"pauseWorkspace":true}}` +
 				`]}]`
 			patchRules := func() error {
 				cmd := exec.Command("kubectl", "patch", "workspacekind", exemptionWorkspaceKindName,
@@ -916,7 +1142,7 @@ var _ = Describe("controller", Ordered, func() {
 			By("overriding the activityRules with a single fast catch-all pause rule")
 			rulesPatch := `[` +
 				`{"op":"replace","path":"/spec/activityRules","value":[` +
-				`{"config":{"secondsSinceActive":16,"minRunningSeconds":0},"match":{},"effect":{"pauseWorkspace":true}}` +
+				`{"config":{"secondsSinceActive":16,"minRunningSeconds":0},"match":[],"effect":{"pauseWorkspace":true}}` +
 				`]}]`
 			patchRules := func() error {
 				cmd := exec.Command("kubectl", "patch", "workspacekind", failingProbeWorkspaceKindName,
@@ -1011,7 +1237,7 @@ var _ = Describe("controller", Ordered, func() {
 			By("overriding activityRules with secondsSinceActive=16 and minRunningSeconds=15")
 			rulesPatch := `[` +
 				`{"op":"replace","path":"/spec/activityRules","value":[` +
-				`{"config":{"secondsSinceActive":16,"minRunningSeconds":15},"match":{},"effect":{"pauseWorkspace":true}}` +
+				`{"config":{"secondsSinceActive":16,"minRunningSeconds":15},"match":[],"effect":{"pauseWorkspace":true}}` +
 				`]}]`
 			patchRules := func() error {
 				cmd := exec.Command("kubectl", "patch", "workspacekind", staleWorkspaceKindName,
@@ -1266,94 +1492,4 @@ var _ = Describe("controller", Ordered, func() {
 		})
 	})
 
-	Context("Activity Probes", func() {
-
-		AfterAll(func() {
-			By("deleting the probe Workspace")
-			cmd := exec.Command("kubectl", "delete", "workspace", probeWorkspaceName,
-				"-n", workspaceNamespace, "--ignore-not-found=true", "--wait",
-				fmt.Sprintf("--timeout=%s", timeout),
-			)
-			_, _ = utils.Run(cmd)
-
-			By("deleting the probe WorkspaceKind")
-			cmd = exec.Command("kubectl", "delete", "workspacekind", probeWorkspaceKindName,
-				"--ignore-not-found=true",
-			)
-			_, _ = utils.Run(cmd)
-		})
-
-		It("should update activity status using Jupyter probe", func() {
-			By("creating a WorkspaceKind with short Jupyter probe intervals")
-			// We use a very short probe interval to verify the status updates quickly.
-			kindYAML, err := utils.RenderActivityWorkspaceKind(
-				filepath.Join(projectDir, "manifests/kustomize/samples/jupyterlab_v1beta1_workspacekind.yaml"),
-				probeWorkspaceKindName,
-			)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Patch the intervals to be very short for the test
-			kindYAML = strings.Replace(kindYAML, "minProbeIntervalSeconds: 300", "minProbeIntervalSeconds: 5", 1)
-			kindYAML = strings.Replace(kindYAML, "probeIntervalSeconds: 3600", "probeIntervalSeconds: 10", 1)
-
-			applyKind := func() error {
-				cmd := exec.Command("kubectl", "apply", "-f", "-")
-				cmd.Stdin = strings.NewReader(kindYAML)
-				_, err := utils.Run(cmd)
-				return err
-			}
-			Eventually(applyKind, timeout, interval).Should(Succeed())
-
-			By("creating a Workspace using the Jupyter probe WorkspaceKind")
-			workspaceYAML, err := utils.RenderActivityWorkspace(
-				filepath.Join(projectDir, "manifests/kustomize/samples/jupyterlab_v1beta1_workspace.yaml"),
-				probeWorkspaceName,
-				probeWorkspaceKindName,
-			)
-			Expect(err).NotTo(HaveOccurred())
-
-			applyWorkspace := func() error {
-				cmd := exec.Command("kubectl", "apply", "-f", "-", "-n", workspaceNamespace)
-				cmd.Stdin = strings.NewReader(workspaceYAML)
-				_, err := utils.Run(cmd)
-				return err
-			}
-			Eventually(applyWorkspace, timeout, interval).Should(Succeed())
-
-			By("waiting for the workspace to be Running")
-			verifyRunning := func(g Gomega) error {
-				statusState, err := utils.GetWorkspaceJSONPath(probeWorkspaceName, workspaceNamespace, "{.status.state}")
-				g.Expect(err).NotTo(HaveOccurred())
-				if statusState != string(kubefloworgv1beta1.WorkspaceStateRunning) {
-					return fmt.Errorf("workspace not Running yet, state=%q", statusState)
-				}
-				return nil
-			}
-			Eventually(verifyRunning, timeout, interval).Should(Succeed())
-
-			By("verifying that lastProbe and lastActivity are updated")
-			verifyActivityUpdated := func(g Gomega) error {
-				lastProbeResult, err := utils.GetWorkspaceJSONPath(
-					probeWorkspaceName, workspaceNamespace, "{.status.activity.lastProbe.result}")
-				g.Expect(err).NotTo(HaveOccurred())
-
-				if lastProbeResult != string(kubefloworgv1beta1.WorkspaceProbeResultSuccess) {
-					lastProbeMessage, _ := utils.GetWorkspaceJSONPath(
-						probeWorkspaceName, workspaceNamespace, "{.status.activity.lastProbe.message}")
-					return fmt.Errorf("last probe not successful yet, result=%q, message=%q", lastProbeResult, lastProbeMessage)
-				}
-
-				lastActivity, err := utils.GetWorkspaceJSONPath(
-					probeWorkspaceName, workspaceNamespace, "{.status.activity.lastActivity}")
-				g.Expect(err).NotTo(HaveOccurred())
-				if lastActivity == "" || lastActivity == "0" {
-					return fmt.Errorf("lastActivity not updated yet")
-				}
-
-				return nil
-			}
-			// It might take a few seconds for the first probe to run after reaching Running state
-			Eventually(verifyActivityUpdated, time.Minute, interval).Should(Succeed())
-		})
-	})
 })
