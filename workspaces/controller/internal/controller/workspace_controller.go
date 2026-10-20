@@ -85,10 +85,6 @@ const (
 	workspaceKubeRbacProxyTLSCertsMountPath  = "/etc/tls/private"
 	workspaceKubeRbacProxyTLSCertFilePath    = "/etc/tls/private/tls.crt"
 	workspaceKubeRbacProxyTLSKeyFilePath     = "/etc/tls/private/tls.key"
-	// requeue delay when the local cache is known to be stale (fixed delay,
-	// since a stale cache is not write contention, so no exponential backoff
-	// is needed)
-	requeueAfterStaleCache = 250 * time.Millisecond
 
 	// lengths for resource names
 	generateNameSuffixLength    = 6
@@ -230,7 +226,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if err := r.Update(ctx, workspace); err != nil {
 				if apierrors.IsConflict(err) {
 					log.V(2).Info("update conflict while removing finalizer, will requeue")
-					return ctrl.Result{Requeue: true}, nil
+					return ctrl.Result{}, err
 				}
 				log.Error(err, "unable to remove finalizer from Workspace")
 				return ctrl.Result{}, err
@@ -465,7 +461,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				if err := r.Update(ctx, foundStatefulSet); err != nil {
 					if apierrors.IsConflict(err) {
 						log.V(2).Info("update conflict while updating StatefulSet, will requeue")
-						return ctrl.Result{Requeue: true}, nil
+						return ctrl.Result{}, err
 					}
 					log.Error(err, "unable to update StatefulSet")
 					return ctrl.Result{}, err
@@ -670,7 +666,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if err := r.Update(ctx, workspace); err != nil {
 				if apierrors.IsConflict(err) {
 					log.V(2).Info("update conflict while adding finalizer to Workspace, will requeue")
-					return ctrl.Result{Requeue: true}, nil
+					return ctrl.Result{}, err
 				}
 				log.Error(err, "unable to add finalizer to Workspace")
 				return ctrl.Result{}, err
@@ -816,7 +812,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				if err := r.Update(ctx, foundRefGrant); err != nil {
 					if apierrors.IsConflict(err) {
 						log.V(2).Info("update conflict while updating ReferenceGrant, will requeue")
-						return ctrl.Result{Requeue: true}, nil
+						return ctrl.Result{}, err
 					}
 					log.Error(err, "unable to update ReferenceGrant")
 					return ctrl.Result{}, err
@@ -859,7 +855,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				if err := r.Update(ctx, foundHTTPRoute); err != nil {
 					if apierrors.IsConflict(err) {
 						log.V(2).Info("update conflict while updating HTTPRoute, will requeue")
-						return ctrl.Result{Requeue: true}, nil
+						return ctrl.Result{}, err
 					}
 					log.Error(err, "unable to update HTTPRoute")
 					return ctrl.Result{}, err
@@ -1090,8 +1086,7 @@ func (r *WorkspaceReconciler) reconcileOwnedStatefulSet(
 			if err := r.Update(ctx, foundStatefulSet); err != nil {
 				if apierrors.IsConflict(err) {
 					log.V(2).Info("update conflict while updating StatefulSet, will requeue")
-					res := ctrl.Result{Requeue: true}
-					return nil, "", &res, nil
+					return nil, "", nil, err
 				}
 				log.Error(err, "unable to update StatefulSet")
 				return nil, "", nil, err
