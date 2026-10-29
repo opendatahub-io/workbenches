@@ -35,9 +35,11 @@ import (
 // openshift/api.
 type ProfileWatcher struct {
 	client.Client
-	InitialProfile  map[string]any
-	OnProfileChange func(ctx context.Context)
-	lastProfile     map[string]any
+	InitialProfile   map[string]any
+	InitialAdherence string
+	OnProfileChange  func(ctx context.Context)
+	lastProfile      map[string]any
+	lastAdherence    string
 }
 
 func (w *ProfileWatcher) Reconcile(
@@ -57,9 +59,13 @@ func (w *ProfileWatcher) Reconcile(
 		apiServer.Object, fieldSpec, fieldTLSSecurityProfile,
 	)
 	current = normalizeProfileMap(current)
+	adherence, _, _ := unstructured.NestedString(apiServer.Object, fieldSpec, fieldTLSAdherence)
+	// The controller process exits on either change. The next start reconciles
+	// Workspaces, and that reconcile rewrites the kube-rbac-proxy sidecar args.
 	if w.OnProfileChange != nil &&
-		!reflect.DeepEqual(w.lastProfile, current) {
+		(!reflect.DeepEqual(w.lastProfile, current) || w.lastAdherence != adherence) {
 		w.lastProfile = current
+		w.lastAdherence = adherence
 		w.OnProfileChange(ctx)
 	}
 
@@ -68,6 +74,7 @@ func (w *ProfileWatcher) Reconcile(
 
 func (w *ProfileWatcher) SetupWithManager(mgr ctrl.Manager) error {
 	w.lastProfile = w.InitialProfile
+	w.lastAdherence = w.InitialAdherence
 
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(apiServerGVK)
