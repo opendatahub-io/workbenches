@@ -1365,7 +1365,7 @@ var _ = Describe("controller", Ordered, func() {
 			// - minRunningSeconds=15
 			rulesPatch := `[` +
 				`{"op":"replace","path":"/spec/activityRules","value":[` +
-				`{"config":{"secondsSinceActive":16,"minRunningSeconds":15},"match":{},"effect":{"pauseWorkspace":true}}` +
+				`{"config":{"secondsSinceActive":16,"minRunningSeconds":15},"match":[],"effect":{"pauseWorkspace":true}}` +
 				`]}]`
 			patchRules := func() error {
 				cmd := exec.Command("kubectl", "patch", "workspacekind", hasActivityFalseWorkspaceKindName,
