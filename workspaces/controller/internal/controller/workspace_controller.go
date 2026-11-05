@@ -57,6 +57,7 @@ import (
 	kubefloworgv1beta1 "github.com/kubeflow/notebooks/workspaces/controller/api/v1beta1"
 	"github.com/kubeflow/notebooks/workspaces/controller/internal/config"
 	"github.com/kubeflow/notebooks/workspaces/controller/internal/helper"
+	pkgtls "github.com/kubeflow/notebooks/workspaces/controller/pkg/tls"
 )
 
 const (
@@ -134,8 +135,12 @@ const (
 // WorkspaceReconciler reconciles a Workspace object
 type WorkspaceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Config *config.EnvConfig
+	// APIReader reads the APIServer directly. The cached client does not watch
+	// that object for the sidecar; reconcile must see the profile that will be
+	// written into the StatefulSet pod template.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	Config    *config.EnvConfig
 
 	// PodExecutor executes activity probe scripts inside Workspace Pods.
 	// If nil, podExec probes fail with a failure probe result indicating exec is not configured.
@@ -559,9 +564,15 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		service = foundService
 	}
 
-	// If using KubeGateway, add sidecar to StatefulSet BEFORE reconciling
+	// If using KubeGateway, add sidecar to StatefulSet BEFORE reconciling.
+	// An unusable strict profile returns before the StatefulSet is written.
 	if r.Config.UseKubeGateway {
-		sidecar, sidecarVolumes := r.generateKubeRBACProxySidecar(workspace, workspaceKind, currentImageConfig.Spec)
+		proxyTLS, tlsErr := pkgtls.ResolveProxyTLS(ctx, r.apiReader(), pkgtls.FIPSEnabled())
+		if tlsErr != nil {
+			log.Error(tlsErr, "unable to resolve kube-rbac-proxy TLS profile; leaving the Workspace StatefulSet unchanged")
+			return ctrl.Result{}, tlsErr
+		}
+		sidecar, sidecarVolumes := r.generateKubeRBACProxySidecar(workspace, workspaceKind, currentImageConfig.Spec, proxyTLS)
 		if sidecar != nil {
 			log.V(1).Info("Adding kube-rbac-proxy sidecar to StatefulSet",
 				"sidecarName", sidecar.Name,
@@ -1910,8 +1921,17 @@ func (r *WorkspaceReconciler) generateKubeGatewayReferenceGrant(workspace *kubef
 	return referenceGrant
 }
 
-// generateKubeRBACProxySidecar generates a KubeRBACProxySidecar container and its required volumes for a Workspace
-func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) (*corev1.Container, []corev1.Volume) {
+// apiReader returns the uncached reader when one is configured.
+func (r *WorkspaceReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
+}
+
+// generateKubeRBACProxySidecar generates a KubeRBACProxySidecar container and its required volumes for a Workspace.
+// proxyTLS is the resolved kube-rbac-proxy listener configuration. Its flags are appended to the existing args.
+func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubefloworgv1beta1.Workspace, workspaceKind *kubefloworgv1beta1.WorkspaceKind, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec, proxyTLS pkgtls.ProxyTLS) (*corev1.Container, []corev1.Volume) {
 
 	currentPodTemplatePortsMap := make(map[kubefloworgv1beta1.PortId]kubefloworgv1beta1.WorkspaceKindPort)
 	for _, port := range workspaceKind.Spec.PodTemplate.Ports {
@@ -1944,7 +1964,7 @@ func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubeflowor
 						Drop: []corev1.Capability{"ALL"},
 					},
 				},
-				Args: []string{
+				Args: append([]string{
 					"--secure-listen-address=0.0.0.0:" + strconv.Itoa(workspaceKubeRbacProxyPort),
 					"--upstream=http://127.0.0.1:" + strconv.Itoa(int(imageConfigPort.Port)) + "/",
 					"--logtostderr=true",
@@ -1956,7 +1976,7 @@ func (r *WorkspaceReconciler) generateKubeRBACProxySidecar(workspace *kubeflowor
 					"--auth-header-fields-enabled=true",
 					"--auth-header-user-field-name=X-Auth-Request-User",
 					"--auth-header-groups-field-name=X-Auth-Request-Groups",
-				},
+				}, proxyTLS.Args()...),
 				Ports: []corev1.ContainerPort{{
 					Name:          workspaceKubeRbacProxyServicePortName,
 					ContainerPort: workspaceKubeRbacProxyPort,

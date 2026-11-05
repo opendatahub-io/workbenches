@@ -93,7 +93,7 @@ func TestParseProfile(t *testing.T) {
 					fieldMinTLSVersion: tlsVersionName12,
 					fieldCiphers: []any{
 						openSSLCipherECDHEECDSAAES128GCMSHA256,
-						"ECDHE-RSA-AES256-GCM-SHA384",
+						openSSLCipherECDHERSAAES256GCMSHA384,
 					},
 				},
 			}),
@@ -241,7 +241,7 @@ func TestResolve_TransientError_SetsAPIAvailable(t *testing.T) {
 
 func TestResolve_Forbidden_SetsAPIAvailable(t *testing.T) {
 	gr := schema.GroupResource{
-		Group: "config.openshift.io", Resource: "apiservers",
+		Group: apiServerGroup, Resource: "apiservers",
 	}
 	fc := &errorClient{err: apierrors.NewForbidden(gr, apiServerName, nil)}
 	result, err := resolve(context.Background(), fc)
@@ -395,6 +395,81 @@ func TestProfileWatcher_NilProfileTreatedAsIntermediate(t *testing.T) {
 	}
 	if called {
 		t.Error("should NOT restart when nil profile matches Intermediate")
+	}
+}
+
+func TestResolve_RecordsAdherence(t *testing.T) {
+	apiServer := newAPIServer(map[string]any{fieldType: profileTypeIntermediate})
+	spec := apiServer.Object[fieldSpec].(map[string]any)
+	spec[fieldTLSAdherence] = adherenceLegacy
+	fc := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(apiServer).Build()
+
+	result, err := resolve(context.Background(), fc)
+	if err != nil {
+		t.Fatalf("resolve() error = %v", err)
+	}
+	if result.Adherence != adherenceLegacy {
+		t.Fatalf("Adherence = %q", result.Adherence)
+	}
+	if result.Profile[fieldType] != profileTypeIntermediate {
+		t.Fatalf("Profile = %#v", result.Profile)
+	}
+}
+
+func TestProfileWatcher_AdherenceChange(t *testing.T) {
+	profile := map[string]any{fieldType: profileTypeIntermediate}
+	apiServer := newAPIServer(profile)
+	spec := apiServer.Object[fieldSpec].(map[string]any)
+	spec[fieldTLSAdherence] = "StrictAllComponents"
+	fc := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(apiServer).Build()
+
+	changed := false
+	w := &ProfileWatcher{
+		Client:         fc,
+		InitialProfile: profile,
+		OnProfileChange: func(_ context.Context) {
+			changed = true
+		},
+	}
+	w.lastProfile = profile
+	w.lastAdherence = ""
+
+	_, err := w.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: client.ObjectKey{Name: apiServerName},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if !changed {
+		t.Fatal("expected OnProfileChange when only tlsAdherence changes")
+	}
+}
+
+func TestProfileWatcher_SameAdherenceNoCallback(t *testing.T) {
+	profile := map[string]any{fieldType: profileTypeIntermediate}
+	apiServer := newAPIServer(profile)
+	spec := apiServer.Object[fieldSpec].(map[string]any)
+	spec[fieldTLSAdherence] = adherenceLegacy
+	fc := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(apiServer).Build()
+
+	called := false
+	w := &ProfileWatcher{
+		Client:           fc,
+		InitialProfile:   profile,
+		InitialAdherence: adherenceLegacy,
+		OnProfileChange:  func(_ context.Context) { called = true },
+	}
+	w.lastProfile = profile
+	w.lastAdherence = adherenceLegacy
+
+	_, err := w.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: client.ObjectKey{Name: apiServerName},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if called {
+		t.Fatal("OnProfileChange fired for an unchanged profile and adherence")
 	}
 }
 
