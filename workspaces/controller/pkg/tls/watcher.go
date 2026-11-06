@@ -35,11 +35,17 @@ import (
 // openshift/api.
 type ProfileWatcher struct {
 	client.Client
-	InitialProfile   map[string]any
+	InitialProfile map[string]any
+	// InitialAdherence seeds the last-seen spec.tlsAdherence so the first reconcile
+	// does not fire a spurious change when the value already matches.
 	InitialAdherence string
-	OnProfileChange  func(ctx context.Context)
-	lastProfile      map[string]any
-	lastAdherence    string
+	// OnProfileChange is invoked when the profile OR the adherence policy changes.
+	// Returning an error leaves the last-seen values unchanged and requeues the
+	// request so the change is retried (e.g. when an in-process re-resolution
+	// failed transiently).
+	OnProfileChange func(ctx context.Context) error
+	lastProfile     map[string]any
+	lastAdherence   string
 }
 
 func (w *ProfileWatcher) Reconcile(
@@ -59,14 +65,22 @@ func (w *ProfileWatcher) Reconcile(
 		apiServer.Object, fieldSpec, fieldTLSSecurityProfile,
 	)
 	current = normalizeProfileMap(current)
-	adherence, _, _ := unstructured.NestedString(apiServer.Object, fieldSpec, fieldTLSAdherence)
+	currentAdherence, _, adhErr := unstructured.NestedString(
+		apiServer.Object, fieldSpec, fieldTLSAdherence,
+	)
+	// A malformed adherence field coerces to "" and would compare equal to a previous
+	// unset value, silently hiding the change. Treat a decode error as a change so the
+	// callback re-resolves (which flags it PolicyUnreadable and retains/retries).
 	// The controller process exits on either change. The next start reconciles
 	// Workspaces, and that reconcile rewrites the kube-rbac-proxy sidecar args.
 	if w.OnProfileChange != nil &&
-		(!reflect.DeepEqual(w.lastProfile, current) || w.lastAdherence != adherence) {
+		(adhErr != nil || !reflect.DeepEqual(w.lastProfile, current) || w.lastAdherence != currentAdherence) {
+		if err := w.OnProfileChange(ctx); err != nil {
+			// Leave the last-seen values unchanged so the change is retried on requeue.
+			return reconcile.Result{}, err
+		}
 		w.lastProfile = current
-		w.lastAdherence = adherence
-		w.OnProfileChange(ctx)
+		w.lastAdherence = currentAdherence
 	}
 
 	return reconcile.Result{}, nil
