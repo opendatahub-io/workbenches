@@ -133,7 +133,7 @@ else:
 controller_manifests = kustomize(controller_kustomize_path, kustomize_bin=kustomize_bin)
 
 # Mutate the manifest objects before applying
-controller_objects = decode_yaml_stream(manifests)
+controller_objects = decode_yaml_stream(controller_manifests)
 for o in controller_objects:
     # skip if missing kind/name
     kind = o.get("kind")
@@ -160,7 +160,7 @@ for o in controller_objects:
                     env.append({"name": "USE_ISTIO", "value": "false"})
 
 # Apply modified manifests
-k8s_yaml(encode_yaml_stream(controller_objects))
+k8s_yaml(encode_yaml_stream(controller_objects), allow_duplicates=True)
 
 # Manage k8s_yaml resources
 # - Attach to the auto-created controller workload resource (so the port-forwards
