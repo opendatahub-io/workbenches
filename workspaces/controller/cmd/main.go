@@ -124,8 +124,10 @@ func main() {
 	// Get controller namespace (from service account file or POD_NAMESPACE env var)
 	cfg.ControllerNamespace = getControllerNamespace("kubeflow-workspaces")
 
+	// Production default: JSON logs at info, stack traces on errors.
+	// Raise verbosity with --zap-devel or --zap-log-level (for example "debug" or "2").
 	opts := zap.Options{
-		Development: true,
+		Development: false,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -251,9 +253,10 @@ func main() {
 	}
 
 	if err = (&controllerInternal.WorkspaceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Config: cfg,
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+		Config:    cfg,
 		PodExecutor: &helper.RemoteCommandExecutor{
 			Clientset:  clientset,
 			RestConfig: restCfg,
@@ -319,10 +322,11 @@ func main() {
 
 	if tlsResult.APIAvailable {
 		watcher := &pkgtls.ProfileWatcher{
-			Client:         mgr.GetClient(),
-			InitialProfile: tlsResult.Profile,
+			Client:           mgr.GetClient(),
+			InitialProfile:   tlsResult.Profile,
+			InitialAdherence: tlsResult.Adherence,
 			OnProfileChange: func(_ context.Context) {
-				setupLog.Info("TLS profile changed, initiating shutdown to reload")
+				setupLog.Info("TLS profile or adherence changed, initiating shutdown to reload")
 				cancel()
 			},
 		}
