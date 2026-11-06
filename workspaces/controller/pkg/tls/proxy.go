@@ -25,6 +25,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -54,8 +55,8 @@ const (
 )
 
 // ErrProxyTLSUnusable is returned when a strict TLS profile cannot be represented
-// by the Workspace kube-rbac-proxy sidecar. Reconcile must return this error
-// before it writes the StatefulSet.
+// by the Workspace kube-rbac-proxy sidecar. Reconcile returns this error and does
+// not publish a new pod template from that profile.
 var ErrProxyTLSUnusable = errors.New("kube-rbac-proxy TLS profile is unusable")
 
 // ProxyTLS is the kube-rbac-proxy listener TLS configuration.
@@ -86,13 +87,28 @@ func (p ProxyTLS) Args() []string {
 	return args
 }
 
+// fipsProcReadLog reports a missing FIPS proc file once. FIPSEnabled runs on every
+// reconcile, and a container without this file would otherwise log on each pass.
+var fipsProcReadLog sync.Once
+
 // FIPSEnabled reports whether this process should drop non-FIPS ciphers and groups.
+//
+// OpenShift enables FIPS for the whole cluster, so the node running this controller
+// matches the nodes that run Workspace pods. A missing or unreadable
+// /proc/sys/crypto/fips_enabled is treated as non-FIPS and logged once; the
+// controller keeps reconciling.
 func FIPSEnabled() bool {
 	if fips140.Enabled() {
 		return true
 	}
 	data, err := os.ReadFile("/proc/sys/crypto/fips_enabled")
 	if err != nil {
+		fipsProcReadLog.Do(func() {
+			log.Info(
+				"unable to read /proc/sys/crypto/fips_enabled; treating this controller as non-FIPS",
+				"error", err,
+			)
+		})
 		return false
 	}
 	return strings.TrimSpace(string(data)) == "1"
@@ -104,7 +120,7 @@ func FIPSEnabled() bool {
 // Intermediate defaults. StrictAllComponents and any other adherence use the
 // configured profile. A strict profile that cannot be represented returns
 // ErrProxyTLSUnusable. Other read failures are returned so reconcile does not
-// publish a StatefulSet from an unknown profile.
+// publish a new pod template from an unknown profile.
 func ResolveProxyTLS(ctx context.Context, reader client.Reader, fips bool) (ProxyTLS, error) {
 	apiServer := &unstructured.Unstructured{}
 	apiServer.SetGroupVersionKind(apiServerGVK)

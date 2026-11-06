@@ -34,10 +34,10 @@ import (
 func TestPinnedKubeRBACProxyStarts(t *testing.T) {
 	cli, mountOpt := containerCLI(t)
 	if _, err := exec.LookPath("openssl"); err != nil {
-		t.Fatal("openssl is required to mint the sidecar certificate")
+		t.Skip("openssl is required to mint the sidecar certificate")
 	}
 	if _, err := exec.LookPath("curl"); err != nil {
-		t.Fatal("curl is required to call the proxy health endpoint")
+		t.Skip("curl is required to call the proxy health endpoint")
 	}
 	image := pinnedKubeRBACProxyImage(t)
 

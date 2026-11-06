@@ -103,6 +103,88 @@ func TestInvalidStrictProfileLeavesStatefulSetUnchanged(t *testing.T) {
 	if !equality.Semantic.DeepEqual(before.Spec.Template, after.Spec.Template) {
 		t.Fatal("pod template changed after an unusable strict profile")
 	}
+	status := workspaceOf(t, fixture).Status
+	if status.State != kubefloworgv1beta1.WorkspaceStateError {
+		t.Fatalf("status.state = %s, want Error", status.State)
+	}
+	if !strings.Contains(status.StateMessage, "kube-rbac-proxy") {
+		t.Fatalf("status.stateMessage = %q", status.StateMessage)
+	}
+}
+
+func TestUnusableProfileStillPausesWorkspace(t *testing.T) {
+	fixture := newGatewayFixture(t, emptyAPIReader())
+	req := exampleReconcileRequest()
+	if _, err := fixture.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("initial reconcile: %v", err)
+	}
+	before := fixture.statefulSet(t)
+	if before.Spec.Replicas == nil || *before.Spec.Replicas != 1 {
+		t.Fatalf("replicas = %v", before.Spec.Replicas)
+	}
+
+	workspace := workspaceOf(t, fixture)
+	workspace.Spec.Paused = true
+	if err := fixture.Update(context.Background(), workspace); err != nil {
+		t.Fatal(err)
+	}
+	fixture.APIReader = apiReaderWith(apiServerProfile(map[string]any{"type": "Old"}, "StrictAllComponents"))
+	_, err := fixture.Reconcile(context.Background(), req)
+	if !errors.Is(err, pkgtls.ErrProxyTLSUnusable) {
+		t.Fatalf("reconcile error = %v", err)
+	}
+
+	after := fixture.statefulSet(t)
+	if after.Spec.Replicas == nil || *after.Spec.Replicas != 0 {
+		t.Fatalf("replicas = %v, want 0", after.Spec.Replicas)
+	}
+	if !equality.Semantic.DeepEqual(before.Spec.Template, after.Spec.Template) {
+		t.Fatal("pod template changed while scaling a paused Workspace")
+	}
+	if workspaceOf(t, fixture).Status.State != kubefloworgv1beta1.WorkspaceStateError {
+		t.Fatalf("status.state = %s, want Error", workspaceOf(t, fixture).Status.State)
+	}
+}
+
+func TestUnusableProfileDoesNotCreateStatefulSet(t *testing.T) {
+	fixture := newGatewayFixture(t, apiReaderWith(apiServerProfile(map[string]any{"type": "Old"}, "StrictAllComponents")))
+	_, err := fixture.Reconcile(context.Background(), exampleReconcileRequest())
+	if !errors.Is(err, pkgtls.ErrProxyTLSUnusable) {
+		t.Fatalf("reconcile error = %v", err)
+	}
+	list := &appsv1.StatefulSetList{}
+	if err := fixture.List(context.Background(), list, client.InNamespace("workspaces")); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 0 {
+		t.Fatalf("StatefulSet count = %d, want 0", len(list.Items))
+	}
+	if workspaceOf(t, fixture).Status.State != kubefloworgv1beta1.WorkspaceStateError {
+		t.Fatalf("status.state = %s, want Error", workspaceOf(t, fixture).Status.State)
+	}
+}
+
+func TestUnusableProfileDoesNotBlockWorkspaceWithoutHTTPPort(t *testing.T) {
+	fixture := newGatewayFixture(t, apiReaderWith(apiServerProfile(map[string]any{"type": "Old"}, "StrictAllComponents")))
+	kind := &kubefloworgv1beta1.WorkspaceKind{}
+	if err := fixture.Get(context.Background(), types.NamespacedName{Name: "jupyterlab"}, kind); err != nil {
+		t.Fatal(err)
+	}
+	for i := range kind.Spec.PodTemplate.Ports {
+		kind.Spec.PodTemplate.Ports[i].Protocol = "TCP"
+	}
+	if err := fixture.Update(context.Background(), kind); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := fixture.Reconcile(context.Background(), exampleReconcileRequest()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	for _, container := range fixture.statefulSet(t).Spec.Template.Spec.Containers {
+		if container.Name == workspaceKubeRbacProxyServicePortName {
+			t.Fatal("kube-rbac-proxy sidecar was added without an HTTP port")
+		}
+	}
 }
 
 func TestProfileAdherenceChangeRollsStatefulSet(t *testing.T) {
@@ -229,6 +311,15 @@ func newGatewayFixture(t *testing.T, apiReader client.Reader) *WorkspaceReconcil
 			ControllerNamespace:  "opendatahub",
 		},
 	}
+}
+
+func workspaceOf(t *testing.T, r *WorkspaceReconciler) *kubefloworgv1beta1.Workspace {
+	t.Helper()
+	workspace := &kubefloworgv1beta1.Workspace{}
+	if err := r.Get(context.Background(), exampleReconcileRequest().NamespacedName, workspace); err != nil {
+		t.Fatal(err)
+	}
+	return workspace
 }
 
 func (r *WorkspaceReconciler) statefulSet(t *testing.T) *appsv1.StatefulSet {

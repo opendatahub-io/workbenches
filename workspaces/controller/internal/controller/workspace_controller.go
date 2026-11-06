@@ -125,6 +125,7 @@ const (
 	stateMsgErrorPodWarningEvent           = "Workspace Pod has warning event: %s"
 	stateMsgErrorContainerCrashLoopBackOff = "Workspace Container is not running (CrashLoopBackOff)"
 	stateMsgErrorContainerImagePullBackOff = "Workspace Container is not running (ImagePullBackOff)"
+	stateMsgErrorKubeRBACProxyTLS          = "kube-rbac-proxy TLS profile cannot be applied: %s"
 	stateMsgPaused                         = "Workspace is paused"
 	stateMsgPending                        = "Workspace is pending"
 	stateMsgRunning                        = "Workspace is running"
@@ -564,34 +565,57 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		service = foundService
 	}
 
-	// If using KubeGateway, add sidecar to StatefulSet BEFORE reconciling.
-	// An unusable strict profile returns before the StatefulSet is written.
-	if r.Config.UseKubeGateway {
+	// If using KubeGateway, add the sidecar before the StatefulSet is written.
+	// Resolve the profile only when a sidecar will be generated. An unusable
+	// strict profile does not publish a new pod template: an existing StatefulSet
+	// keeps its template, and a missing StatefulSet is not created. Reconcile
+	// continues so pause, culling, and status still run, then returns the error.
+	var proxyTLSErr error
+	writeStatefulSet := true
+	if r.Config.UseKubeGateway && kubeRBACProxySidecarNeeded(workspaceKind, currentImageConfig.Spec) {
 		proxyTLS, tlsErr := pkgtls.ResolveProxyTLS(ctx, r.apiReader(), pkgtls.FIPSEnabled())
 		if tlsErr != nil {
-			log.Error(tlsErr, "unable to resolve kube-rbac-proxy TLS profile; leaving the Workspace StatefulSet unchanged")
-			return ctrl.Result{}, tlsErr
-		}
-		sidecar, sidecarVolumes := r.generateKubeRBACProxySidecar(workspace, workspaceKind, currentImageConfig.Spec, proxyTLS)
-		if sidecar != nil {
-			log.V(1).Info("Adding kube-rbac-proxy sidecar to StatefulSet",
-				"sidecarName", sidecar.Name,
-				"totalContainersBefore", len(statefulSet.Spec.Template.Spec.Containers))
-			statefulSet.Spec.Template.Spec.Containers = append(statefulSet.Spec.Template.Spec.Containers, *sidecar)
-			statefulSet.Spec.Template.Spec.Volumes = append(statefulSet.Spec.Template.Spec.Volumes, sidecarVolumes...)
-			log.V(1).Info("Sidecar added to StatefulSet",
-				"totalContainersAfter", len(statefulSet.Spec.Template.Spec.Containers),
-				"totalVolumes", len(statefulSet.Spec.Template.Spec.Volumes))
+			proxyTLSErr = tlsErr
+			log.Error(tlsErr, "unable to resolve kube-rbac-proxy TLS profile; leaving the Workspace pod template unchanged")
+			existing, count, findErr := r.findOwnedStatefulSet(ctx, req.Namespace, workspace.Name)
+			if findErr != nil {
+				log.Error(findErr, "unable to find the Workspace StatefulSet")
+				return ctrl.Result{}, findErr
+			}
+			switch count {
+			case 0:
+				writeStatefulSet = false
+				log.Info("not creating the Workspace StatefulSet until the kube-rbac-proxy TLS profile can be resolved")
+			case 1:
+				statefulSet.Spec.Template = *existing.Spec.Template.DeepCopy()
+			}
+		} else {
+			sidecar, sidecarVolumes := r.generateKubeRBACProxySidecar(workspace, workspaceKind, currentImageConfig.Spec, proxyTLS)
+			if sidecar != nil {
+				log.V(1).Info("Adding kube-rbac-proxy sidecar to StatefulSet",
+					"sidecarName", sidecar.Name,
+					"totalContainersBefore", len(statefulSet.Spec.Template.Spec.Containers))
+				statefulSet.Spec.Template.Spec.Containers = append(statefulSet.Spec.Template.Spec.Containers, *sidecar)
+				statefulSet.Spec.Template.Spec.Volumes = append(statefulSet.Spec.Template.Spec.Volumes, sidecarVolumes...)
+				log.V(1).Info("Sidecar added to StatefulSet",
+					"totalContainersAfter", len(statefulSet.Spec.Template.Spec.Containers),
+					"totalVolumes", len(statefulSet.Spec.Template.Spec.Volumes))
+			}
 		}
 	}
 
 	// reconcile StatefulSet (now with sidecar if KubeGateway is enabled)
-	statefulSet, statefulSetName, stsResult, err := r.reconcileOwnedStatefulSet(ctx, log, workspace, req.Namespace, statefulSet)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if stsResult != nil {
-		return *stsResult, nil
+	var stsResult *ctrl.Result
+	if writeStatefulSet {
+		statefulSet, statefulSetName, stsResult, err = r.reconcileOwnedStatefulSet(ctx, log, workspace, req.Namespace, statefulSet)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if stsResult != nil {
+			return *stsResult, nil
+		}
+	} else {
+		statefulSetName = statefulSet.Name
 	}
 
 	if r.Config.UseIstio {
@@ -911,6 +935,14 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	result = mergeReconcileResult(result, activityResult)
 
+	// Surface the TLS failure after activity handling. generateWorkspaceStatus has
+	// already set Running when the Pod is up, so culling could run; the persisted
+	// status then shows why the pod template was left unchanged.
+	if proxyTLSErr != nil {
+		workspace.Status.State = kubefloworgv1beta1.WorkspaceStateError
+		workspace.Status.StateMessage = fmt.Sprintf(stateMsgErrorKubeRBACProxyTLS, proxyTLSErr.Error())
+	}
+
 	// update the Workspace status, if it has changed
 	if !equality.Semantic.DeepEqual(currentStatus, workspace.Status) {
 		if err := r.Status().Update(ctx, workspace); err != nil {
@@ -942,9 +974,15 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		log.V(1).Info("Workspace paused due to inactivity")
 		// no need to requeue for probing once paused
+		if proxyTLSErr != nil {
+			return ctrl.Result{}, proxyTLSErr
+		}
 		return ctrl.Result{}, nil
 	}
 
+	if proxyTLSErr != nil {
+		return ctrl.Result{}, proxyTLSErr
+	}
 	return result, nil
 }
 
@@ -1919,6 +1957,38 @@ func (r *WorkspaceReconciler) generateKubeGatewayReferenceGrant(workspace *kubef
 	}
 
 	return referenceGrant
+}
+
+// findOwnedStatefulSet returns the Workspace StatefulSet and how many exist.
+// count 0 and count greater than 1 both return a nil object. The caller creates
+// nothing when the count is 0, and leaves a count greater than 1 to reconcileOwnedStatefulSet.
+func (r *WorkspaceReconciler) findOwnedStatefulSet(ctx context.Context, namespace, workspaceName string) (*appsv1.StatefulSet, int, error) {
+	owned := &appsv1.StatefulSetList{}
+	if err := r.List(ctx, owned, &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector(helper.IndexWorkspaceOwnerField, workspaceName),
+		Namespace:     namespace,
+	}); err != nil {
+		return nil, 0, err
+	}
+	if len(owned.Items) != 1 {
+		return nil, len(owned.Items), nil
+	}
+	return owned.Items[0].DeepCopy(), 1, nil
+}
+
+// kubeRBACProxySidecarNeeded reports whether generateKubeRBACProxySidecar would
+// add a container. The profile is resolved only in that case.
+func kubeRBACProxySidecarNeeded(workspaceKind *kubefloworgv1beta1.WorkspaceKind, imageConfigSpec kubefloworgv1beta1.ImageConfigSpec) bool {
+	protocols := make(map[kubefloworgv1beta1.PortId]kubefloworgv1beta1.ImagePortProtocol, len(workspaceKind.Spec.PodTemplate.Ports))
+	for _, port := range workspaceKind.Spec.PodTemplate.Ports {
+		protocols[port.Id] = port.Protocol
+	}
+	for _, imagePort := range imageConfigSpec.Ports {
+		if protocols[imagePort.Id] == kubefloworgv1beta1.ImagePortProtocolHTTP {
+			return true
+		}
+	}
+	return false
 }
 
 // apiReader returns the uncached reader when one is configured.
