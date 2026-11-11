@@ -168,6 +168,15 @@ func main() {
 		})
 	}
 
+	// The controller applies the cluster profile unconditionally to its webhook and
+	// metrics servers, so a Custom profile that resolves to no usable ciphers/groups
+	// cannot be honored — reject it rather than silently serve hardened defaults.
+	// (Denied/transient reads are handled fail-open with watcher self-heal above.)
+	if tlsResult.ProfileUnusable {
+		setupLog.Error(nil, "cluster TLS profile resolved to no usable ciphers/groups; refusing to start")
+		os.Exit(1)
+	}
+
 	webhookServer := webhook.NewServer(webhook.Options{
 		Port:    9443,
 		TLSOpts: tlsOpts,
@@ -310,9 +319,10 @@ func main() {
 			Client:           mgr.GetClient(),
 			InitialProfile:   tlsResult.Profile,
 			InitialAdherence: tlsResult.Adherence,
-			OnProfileChange: func(_ context.Context) {
+			OnProfileChange: func(_ context.Context) error {
 				setupLog.Info("TLS profile or adherence changed, initiating shutdown to reload")
 				cancel()
+				return nil
 			},
 		}
 		if err := watcher.SetupWithManager(mgr); err != nil {

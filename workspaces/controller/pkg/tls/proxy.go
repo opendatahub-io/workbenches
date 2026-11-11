@@ -37,7 +37,6 @@ const (
 	adherenceNoOpinion = "NoOpinion"
 	adherenceLegacy    = "LegacyAdheringComponentsOnly"
 
-	fieldGroups       = "groups"
 	fieldProfileOld   = "old"
 	fieldProfileInter = "intermediate"
 	fieldProfileMod   = "modern"
@@ -422,21 +421,21 @@ func oldProfileCiphers() []string {
 	// The Old profile starts with the Intermediate suites, then older CBC and RSA suites.
 	// Those extra names are not representable as kube-rbac-proxy TLS 1.2 ciphers and are dropped.
 	extra := []string{
-		"ECDHE-ECDSA-AES128-SHA256",
-		"ECDHE-RSA-AES128-SHA256",
-		"ECDHE-ECDSA-AES128-SHA",
-		"ECDHE-RSA-AES128-SHA",
-		"ECDHE-ECDSA-AES256-SHA384",
-		"ECDHE-RSA-AES256-SHA384",
-		"ECDHE-ECDSA-AES256-SHA",
-		"ECDHE-RSA-AES256-SHA",
-		"AES128-GCM-SHA256",
-		"AES256-GCM-SHA384",
-		"AES128-SHA256",
-		"AES256-SHA256",
-		"AES128-SHA",
-		"AES256-SHA",
-		"DES-CBC3-SHA",
+		openSSLCipherECDHEECDSAAES128CBCSHA256,
+		openSSLCipherECDHERSAAES128CBCSHA256,
+		openSSLCipherECDHEECDSAAES128CBCSHA,
+		openSSLCipherECDHERSAAES128CBCSHA,
+		openSSLCipherECDHEECDSAAES256CBCSHA384,
+		openSSLCipherECDHERSAAES256CBCSHA384,
+		openSSLCipherECDHEECDSAAES256CBCSHA,
+		openSSLCipherECDHERSAAES256CBCSHA,
+		openSSLCipherRSAAES128GCMSHA256,
+		openSSLCipherRSAAES256GCMSHA384,
+		openSSLCipherRSAAES128CBCSHA256,
+		openSSLCipherRSAAES256CBCSHA256,
+		openSSLCipherRSAAES128CBCSHA,
+		openSSLCipherRSAAES256CBCSHA,
+		openSSLCipherDESCBC3SHA,
 	}
 	return append(slices.Clone(intermediateProfileCiphers), extra...)
 }
