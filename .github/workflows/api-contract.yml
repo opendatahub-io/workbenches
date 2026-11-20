@@ -1,0 +1,40 @@
+name: API contract
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api-contract:
+    # Baseline: 2396cf5c0e6a4725500454c87a786ea18f0807ee — SHA that origin/main
+    # resolved to on 2026-11-20. The v2.0.2 tag predates the v2 API rework
+    # (dev preview), so the API on main today is the compatibility promise.
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-openapi-check.yml@latest
+    with:
+      contract-set: .rhoai/contracts.yaml
+      contract-id: workspaces-backend-v1
+      baseline-refs: 2396cf5c0e6a4725500454c87a786ea18f0807ee
+      oasdiff-version: "1.33.0"
+      yq-version: "4.45.1"
+      mode: enforce
+
+  api-contract-crd:
+    # Same baseline as the OpenAPI job; see the comment there for its source.
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-crd-check.yml@latest
+    with:
+      crd-glob: workspaces/controller/manifests/kustomize/base/crd/kubeflow.org_*.yaml
+      baseline-refs: 2396cf5c0e6a4725500454c87a786ea18f0807ee
+      mode: enforce
+
+  api-contract-coverage:
+    # Same baseline as the OpenAPI job; see the comment there for its source.
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-coverage-check.yml@latest
+    with:
+      contract-set: .rhoai/contracts.yaml
+      crd-globs: workspaces/controller/manifests/kustomize/base/crd/kubeflow.org_*.yaml
+      baseline-refs: 2396cf5c0e6a4725500454c87a786ea18f0807ee
+      yq-version: "4.45.1"
+      mode: enforce
