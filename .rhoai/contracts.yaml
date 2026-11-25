@@ -1,0 +1,21 @@
+apiVersion: contracts.rhoai.io/v1alpha1
+kind: ContractSet
+metadata:
+  name: workspaces
+spec:
+  # Repository default: 2396cf5c0e6a4725500454c87a786ea18f0807ee — the SHA
+  # origin/main resolved to on 2026-11-20. The v2.0.2 tag predates the v2 API
+  # rework (dev preview), so the API on main today is the compatibility promise.
+  baseline:
+    refs: ["2396cf5c0e6a4725500454c87a786ea18f0807ee"]
+  contracts:
+    - id: workspaces-backend-v1
+      type: openapi
+      declaredArtifact: workspaces/backend/openapi/swagger.json
+      matchPath: "^/api/v1(/|$)"
+      generator:
+        adapter: openapi.static
+        source: workspaces/backend/openapi/swagger.json
+      policy:
+        oasdiffVersion: "1.33.0"
+        yqVersion: "4.45.1"
